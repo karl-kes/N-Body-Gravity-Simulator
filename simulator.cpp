@@ -74,6 +74,28 @@ public:
     double get_mass() const { return mass_; }
 };
 
+// Calculates total energy of all bodies.
+double calculate_total_energy( std::vector<Body> const &bodies ) {
+    double K{ 0.0 };
+    double V{ 0.0 };
+
+    for (size_t i = 0; i < bodies.size(); ++i) {
+        K += 0.5 * bodies[i].get_mass() * bodies[i].get_vel().norm() * bodies[i].get_vel().norm();
+    }
+
+    for (size_t i = 0; i < bodies.size(); ++i) {
+        for (size_t j = i + 1; j < bodies.size(); ++j) {
+            Vec_3D R = bodies[i].get_pos() - bodies[j].get_pos();
+            double dist = R.norm();
+
+            if (dist < 1.0e-10) continue;
+
+            V -= G * bodies[i].get_mass() * bodies[j].get_mass() / dist;
+        }
+    }
+    
+    return K + V;
+}
 // Load bodies.
 void load_csv_bodies( std::string file_name, std::vector<Body> &bodies ) {
     std::ifstream file( file_name );
@@ -95,10 +117,10 @@ void load_csv_bodies( std::string file_name, std::vector<Body> &bodies ) {
         }
 
         if ( values.size() == 7 ) {
-            bodies.push_back( { { values[0], values[1], values[2] }, // Positions
-                                { values[3], values[4], values[5] }, // Velocities
-                                values[6]                            // Mass
-                              } );
+            bodies.emplace_back( Vec_3D{ values[0], values[1], values[2] },   // Positions
+                                   Vec_3D{ values[3], values[4], values[5] }, // Velocities
+                                   values[6]                                  // Mass
+                                );
         }
     }
     file.close();
@@ -142,7 +164,10 @@ int main() {
 
     std::cout << "<--- N-Body Simulation --->" << std::endl;
     std::cout << "\nStarting N-Body Simulation..." << std::endl;
-    std::cout << std::fixed << std::setprecision( 2 );
+    std::cout << std::fixed << std::setprecision( 4 );
+
+    double initial_energy{ calculate_total_energy( bodies ) };
+    double max_energy_drift{};
 
     for( int current_step{}; current_step < steps; ++current_step ) {
         // Calculates new acceleration.
@@ -181,10 +206,14 @@ int main() {
                                            << second_idx + 1 << ": "
                                            << R.norm() * CONVERT_TO_KM << " km" << std::endl;
             }
-            std::cout << std::endl;
         }
+
+        double current_energy{ calculate_total_energy( bodies ) };
+        double energy_drift_percent{ 100.0 * std::abs( current_energy - initial_energy ) / std::abs( initial_energy ) };
+        max_energy_drift = std::max( max_energy_drift, energy_drift_percent );
     }
 
+    std::cout << "Max Energy Drift: " << max_energy_drift << "%." << std::endl;
     std::cout << "\n<--- End of Simulation --->" << std::endl;
 
     return 0;
