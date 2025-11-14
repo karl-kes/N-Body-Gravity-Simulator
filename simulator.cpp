@@ -16,6 +16,9 @@ struct Vec_3D {
     double norm() {
         return std::sqrt( x_*x_ + y_*y_ + z_*z_ );
     }
+    double norm_squared() {
+        return x_*x_ + y_*y_ + z_*z_;
+    }
 };
 
 Vec_3D operator+( Vec_3D const &vec, Vec_3D const &other ) {
@@ -48,6 +51,7 @@ public:
     Body ( Vec_3D pos, Vec_3D vel, double mass ) 
          : pos_( pos ), vel_( vel ), acc_{ 0, 0, 0 }, mass_( mass ) {}
     
+    // Calculates new acceleration based on forces from other bodies.
     void calculate_new_acc( std::vector<Body> const &other_bodies ) {
         Vec_3D total_force{};
 
@@ -63,11 +67,13 @@ public:
         acc_ = total_force * ( 1.0 / mass_ );
     }
 
+    // Updates body.
     void update( double dt ) {
         vel_ += acc_ * dt;
         pos_ += vel_ * dt;
     }
 
+    // Body getters.
     Vec_3D get_pos() const { return pos_; }
     Vec_3D get_vel() const { return vel_; }
     Vec_3D get_acc() const { return acc_; }
@@ -79,19 +85,16 @@ double calculate_total_energy( std::vector<Body> const &bodies ) {
     double K{ 0.0 };
     double V{ 0.0 };
 
-    for (size_t i = 0; i < bodies.size(); ++i) {
-        K += 0.5 * bodies[i].get_mass() * bodies[i].get_vel().norm() * bodies[i].get_vel().norm();
-    }
-
-    for (size_t i = 0; i < bodies.size(); ++i) {
-        for (size_t j = i + 1; j < bodies.size(); ++j) {
+    for ( std::size_t i = 0; i < bodies.size(); ++i ) {
+        for ( size_t j = i + 1; j < bodies.size(); ++j ) {
             Vec_3D R = bodies[i].get_pos() - bodies[j].get_pos();
             double dist = R.norm();
 
-            if (dist < 1.0e-10) continue;
+            if ( dist < 1.0e-10 ) continue;
 
             V -= G * bodies[i].get_mass() * bodies[j].get_mass() / dist;
         }
+        K += 0.5 * bodies[i].get_mass() * bodies[i].get_vel().norm_squared();
     }
     
     return K + V;
@@ -118,54 +121,33 @@ void load_csv_bodies( std::string file_name, std::vector<Body> &bodies ) {
 
         if ( values.size() == 7 ) {
             bodies.emplace_back( Vec_3D{ values[0], values[1], values[2] },   // Positions
-                                   Vec_3D{ values[3], values[4], values[5] }, // Velocities
-                                   values[6]                                  // Mass
+                                 Vec_3D{ values[3], values[4], values[5] }, // Velocities
+                                 values[6]                                  // Mass
                                 );
         }
     }
     file.close();
 }
 
-// Load the dt and number of steps.
-void load_simulation_settings( std::string file_name, double &dt, int &steps ) {
-    std::ifstream file( file_name );
-    if ( !file.is_open() ) {
-        std::cout << "Error opening " << file_name << ".csv." << std::endl;
-        return;
-    }
-
-    std::string line{};
-    while ( std::getline( file, line ) ) {
-        if ( line.empty() || line[0] == '#' ) continue;
-
-        std::stringstream string_stream( line );
-        std::string segment{};
-        std::vector<double> values{};
-
-        while ( std::getline( string_stream, segment, ',' ) ) {
-            values.push_back( std::stod( segment ) );
-        }
-
-        if ( values.size() == 2 ) {
-            steps = values[0];
-            dt = values[1];
-        }
-    }
-    file.close();
-}
-
 int main() {
-    double dt{};
+    double dt{ 100 };
     int steps{};
-    load_simulation_settings( "config.csv", dt, steps );
+    int num_outputs{};
 
     std::vector<Body> bodies{};
     load_csv_bodies( "bodies.csv", bodies );
 
     std::cout << "<--- N-Body Simulation --->" << std::endl;
-    std::cout << "\nStarting N-Body Simulation..." << std::endl;
-    std::cout << std::fixed << std::setprecision( 4 );
 
+    std::cout << "Enter number of steps: ";
+    std::cin >> steps;
+    std::cout << "Enter number of outputs: ";
+    std::cin >> num_outputs;
+
+    std::cout << "\nStarting N-Body Simulation..." << std::endl;
+
+    // Keep values in scientific notation to 3 sig figs.
+    std::cout << std::scientific << std::setprecision( 3 );
     double initial_energy{ calculate_total_energy( bodies ) };
     double max_energy_drift{};
 
@@ -180,39 +162,43 @@ int main() {
             bodies[idx].update( dt );
         }
 
-        std::cout << "\n<--- Step: " << ( current_step + 1 ) << " --->" << std::endl;
+        // Outputs information in specific number of outputs.
+        int output_interval = steps / num_outputs;
+        if (current_step % output_interval == 0 || current_step == steps - 1) {
+            std::cout << "\n<--- Step: " << ( current_step + 1 ) << " --->" << std::endl;
 
-        // Displays the current position and velocity for all bodies.
-        for ( std::size_t idx{ 0 }; idx < bodies.size(); ++idx ) {
-            Vec_3D curr_body_pos{ bodies[idx].get_pos() };
-            Vec_3D curr_body_vel{ bodies[idx].get_vel() };
+            // Displays the current position and velocity for all bodies.
+            for ( std::size_t idx{ 0 }; idx < bodies.size(); ++idx ) {
+                Vec_3D curr_body_pos{ bodies[idx].get_pos() };
+                Vec_3D curr_body_vel{ bodies[idx].get_vel() };
 
-            std::cout << "Body " << idx + 1 << ": Pos(" << curr_body_pos.x_ * CONVERT_TO_KM << ", " 
-                                                    << curr_body_pos.y_ * CONVERT_TO_KM << ", " 
-                                                    << curr_body_pos.z_ * CONVERT_TO_KM << ") km, ";
+                std::cout << "Body " << idx + 1 << ": Pos(" << curr_body_pos.x_ * CONVERT_TO_KM << ", " 
+                                                        << curr_body_pos.y_ * CONVERT_TO_KM << ", " 
+                                                        << curr_body_pos.z_ * CONVERT_TO_KM << ") km, ";
 
-            std::cout << "Vel(" << curr_body_vel.x_ * CONVERT_TO_KMS << ", " 
-                                << curr_body_vel.y_ * CONVERT_TO_KMS << ", " 
-                                << curr_body_vel.z_ * CONVERT_TO_KMS << ") km/s, ";
-            std::cout << "Speed: " << curr_body_vel.norm() * CONVERT_TO_KMS << " km/s" << std::endl;
-        }
-        std::cout << std::endl;
+                std::cout << "Vel(" << curr_body_vel.x_ * CONVERT_TO_KMS << ", " 
+                                    << curr_body_vel.y_ * CONVERT_TO_KMS << ", " 
+                                    << curr_body_vel.z_ * CONVERT_TO_KMS << ") km/s, ";
+                std::cout << "Speed: " << curr_body_vel.norm() * CONVERT_TO_KMS << " km/s" << std::endl;
+            }
+            std::cout << std::endl;
 
-        // Displays distance form all bodies to the other.
-        for ( std::size_t idx{ 0 }; idx < bodies.size(); ++idx ) {
-            for ( std::size_t second_idx{ idx + 1 }; second_idx < bodies.size(); ++second_idx ) {
-                Vec_3D R{ bodies[idx].get_pos() - bodies[second_idx].get_pos() };
-                std::cout << "Distance: B" << idx + 1 << "-B"
-                                           << second_idx + 1 << ": "
-                                           << R.norm() * CONVERT_TO_KM << " km" << std::endl;
+            // Displays distance form all bodies to the other.
+            for ( std::size_t idx{ 0 }; idx < bodies.size(); ++idx ) {
+                for ( std::size_t second_idx{ idx + 1 }; second_idx < bodies.size(); ++second_idx ) {
+                    Vec_3D R{ bodies[idx].get_pos() - bodies[second_idx].get_pos() };
+                    std::cout << "Distance: B" << idx + 1 << "-B"
+                                            << second_idx + 1 << ": "
+                                            << R.norm() * CONVERT_TO_KM << " km" << std::endl;
+                }
             }
         }
-
         double current_energy{ calculate_total_energy( bodies ) };
         double energy_drift_percent{ 100.0 * std::abs( current_energy - initial_energy ) / std::abs( initial_energy ) };
         max_energy_drift = std::max( max_energy_drift, energy_drift_percent );
     }
 
+    std::cout << std::fixed << std::scientific << std::setprecision( 4 );
     std::cout << "Max Energy Drift: " << max_energy_drift << "%." << std::endl;
     std::cout << "\n<--- End of Simulation --->" << std::endl;
 

@@ -1,4 +1,0 @@
-# Simulation config; the format is:
-# number-of-steps, dt
-
-300, 10000
