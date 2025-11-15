@@ -7,17 +7,20 @@
 #include <fstream>
 #include <sstream>
 #include <chrono>
+#include <omp.h>
 
-static constexpr double G{ 6.67e-11 };
+static constexpr double G{ 6.67430e-11 };
+static constexpr double EPSILON{ 1.0e2 };
 static constexpr double CONVERT_TO_KMS{ 1.0 / 1000.0 };
 static constexpr double CONVERT_TO_KM{ 1.0 / 1000.0 };
+static constexpr double CONVERT_TO_SEC{ 1.0e-9 };
 
 struct Vec_3D {
     double x_, y_, z_;
-    double norm() {
+    double norm() const {
         return std::sqrt( x_*x_ + y_*y_ + z_*z_ );
     }
-    double norm_squared() {
+    double norm_squared() const {
         return x_*x_ + y_*y_ + z_*z_;
     }
 };
@@ -46,32 +49,34 @@ private:
     Vec_3D pos_;
     Vec_3D vel_;
     Vec_3D acc_;
+    Vec_3D old_acc_;
     double mass_;
 
 public:
     Body ( Vec_3D pos, Vec_3D vel, double mass ) 
-         : pos_( pos ), vel_( vel ), acc_{ 0, 0, 0 }, mass_( mass ) {}
+         : pos_( pos ), vel_( vel ), acc_{ 0, 0, 0 }, old_acc_{ 0, 0, 0 }, mass_( mass ) {}
     
     // Calculates new acceleration based on forces from other bodies.
-    void calculate_new_acc( std::vector<Body> const &other_bodies ) {
+    void calculate_new_acc( std::vector<Body> const &other_bodies, std::size_t const &self_idx ) {
+        old_acc_ = acc_;
         Vec_3D total_force{};
 
-        for ( std::size_t idx{ 0 }; idx < other_bodies.size(); ++idx ) {
+        for ( std::size_t idx = 0; idx < other_bodies.size(); ++idx ) {
+            if ( idx == self_idx ) continue;
+            
             Vec_3D R{ other_bodies[idx].get_pos() - pos_ };
-            double dist{ R.norm() };
+            double dist_squared{ R.norm_squared() + EPSILON * EPSILON };
+            double force_mag{ ( G * mass_ * other_bodies[idx].get_mass() ) / ( dist_squared ) };
 
-            if ( dist < 1.0e-10 ) continue;
-            double force_mag{ ( G * mass_ * other_bodies[idx].get_mass() ) / ( dist * dist ) };
-
-            total_force += R * ( force_mag / dist );
+            total_force += R * ( force_mag / std::sqrt( dist_squared ) );
         }
         acc_ = total_force * ( 1.0 / mass_ );
     }
 
     // Updates body.
-    void update( double dt ) {
-        vel_ += acc_ * dt;
-        pos_ += vel_ * dt;
+    void update( double const &dt ) {
+        pos_ += vel_ * dt + acc_ * ( 0.5 * dt * dt );
+        vel_ += ( acc_ + old_acc_ ) * ( 0.5 * dt );
     }
 
     // Body getters.
@@ -88,10 +93,8 @@ double calculate_total_energy( std::vector<Body> const &bodies ) {
 
     for ( std::size_t i = 0; i < bodies.size(); ++i ) {
         for ( size_t j = i + 1; j < bodies.size(); ++j ) {
-            Vec_3D R = bodies[i].get_pos() - bodies[j].get_pos();
-            double dist = R.norm();
-
-            if ( dist < 1.0e-10 ) continue;
+            Vec_3D R{ bodies[i].get_pos() - bodies[j].get_pos() };
+            double dist{ R.norm() + EPSILON };
 
             V -= G * bodies[i].get_mass() * bodies[j].get_mass() / dist;
         }
@@ -100,8 +103,9 @@ double calculate_total_energy( std::vector<Body> const &bodies ) {
     
     return K + V;
 }
+
 // Load bodies.
-void load_csv_bodies( std::string file_name, std::vector<Body> &bodies ) {
+void load_csv_bodies( std::string const &file_name, std::vector<Body> &bodies ) {
     std::ifstream file( file_name );
     if ( !file.is_open() ) {
         std::cout << "Error opening " << file_name << ".csv." << std::endl;
@@ -131,7 +135,7 @@ void load_csv_bodies( std::string file_name, std::vector<Body> &bodies ) {
 }
 
 int main() {
-    double dt{ 100 };
+    double dt{ 1000 };
     int steps{};
     int num_outputs{};
 
@@ -155,41 +159,57 @@ int main() {
     double max_energy_drift{};
 
     auto start_time{ std::chrono::high_resolution_clock::now() };
-    for( int current_step{}; current_step < steps; ++current_step ) {
-        // Calculates new acceleration.
-        for ( std::size_t idx{ 0 }; idx < bodies.size(); ++idx ) {
-            bodies[idx].calculate_new_acc( bodies );
-        }
 
-        // Updates position and velocity for all bodies.
-        for ( std::size_t idx{ 0 }; idx < bodies.size(); ++idx ) {
-            bodies[idx].update( dt );
-        }
+    #pragma omp parallel 
+    {
+        for( int current_step{}; current_step < steps; ++current_step ) {
+            // Calculates new acceleration.
+            #pragma omp for
+            for ( std::size_t idx = 0; idx < bodies.size(); ++idx ) {
+                bodies[idx].calculate_new_acc( bodies, idx );
+            }
 
-        // Outputs information in specific number of outputs.
-        int output_interval = steps / num_outputs;
-        if (current_step % output_interval == 0 || current_step == steps - 1) {
-            std::cout << "\n<--- Step: " << ( current_step + 1 ) << " --->" << std::endl;
-            // Displays the current position and velocity for all bodies.
-            for ( std::size_t idx{ 0 }; idx < bodies.size(); ++idx ) {
-                Vec_3D curr_body_pos{ bodies[idx].get_pos() };
-                Vec_3D curr_body_vel{ bodies[idx].get_vel() };
+            // Updates position and velocity for all bodies.
+            #pragma omp for
+            for ( std::size_t idx = 0; idx < bodies.size(); ++idx ) {
+                bodies[idx].update( dt );
+            }
 
-                out_file << current_step << "," 
-                            << idx << ","
-                            << curr_body_pos.x_ << ","
-                            << curr_body_pos.y_ << ","
-                            << curr_body_pos.z_ << "\n";
+            // Outputs information in specific number of outputs.
+            int output_interval{};
+            output_interval = steps / num_outputs;
+
+            #pragma omp single
+            {
+                if (current_step % output_interval == 0 || current_step == steps - 1) {
+                    // Calculates maximum energy drift in system.
+                    double current_energy{ calculate_total_energy( bodies ) };
+                    double energy_drift_percent{ 100.0 * std::abs( current_energy - initial_energy ) / std::abs( initial_energy ) };
+                    max_energy_drift = std::max( max_energy_drift, energy_drift_percent );
+
+                    // Outputs the current position for all bodies.
+                    for ( std::size_t idx = 0; idx < bodies.size(); ++idx ) {
+                        Vec_3D curr_body_pos{ bodies[idx].get_pos() };
+                        Vec_3D curr_body_vel{ bodies[idx].get_vel() };
+
+                        out_file << current_step << "," 
+                                 << idx << ","
+                                 << curr_body_pos.x_ << ","
+                                 << curr_body_pos.y_ << ","
+                                 << curr_body_pos.z_ << "\n";
+                    }
+                }
+
+                if ( current_step % (steps / 100) == 0 ) {
+                    std::cout << "Progress: " << (current_step * 100 / steps) << "%\r" << std::flush;
+                }
             }
         }
-        double current_energy{ calculate_total_energy( bodies ) };
-        double energy_drift_percent{ 100.0 * std::abs( current_energy - initial_energy ) / std::abs( initial_energy ) };
-        max_energy_drift = std::max( max_energy_drift, energy_drift_percent );
     }
-    auto time_elapsed{ ( std::chrono::high_resolution_clock::now() - start_time ).count() / 1.0e9 };
+    auto time_elapsed{ ( std::chrono::high_resolution_clock::now() - start_time ).count() * CONVERT_TO_SEC };
 
     std::cout << std::endl << std::fixed << std::scientific << std::setprecision( 4 );
-    std::cout << "Max Energy Drift: " << max_energy_drift << "%." << std::endl;
+    std::cout << "\nMax Energy Drift: " << max_energy_drift << "%." << std::endl;
     std::cout << "Time elapsed: " << time_elapsed << " seconds." << std::endl;
     std::cout << "\n<--- End of Simulation --->" << std::endl;
 
