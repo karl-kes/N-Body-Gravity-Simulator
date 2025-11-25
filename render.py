@@ -17,7 +17,6 @@ body_ids = data['body_id'].unique()
 bodies_data = pd.read_csv('bodies.csv', comment='#', header=None,
                           names=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass'])
 body_masses = bodies_data['mass'].values
-
 print(f"Loaded {len(data)} trajectory points for {len(body_ids)} bodies.")
 print(f"Loaded masses for {len(body_masses)} bodies from bodies.csv")
 
@@ -38,7 +37,6 @@ def calculate_radius(mass):
     
     normalized = (log_mass - log_min) / (log_max - log_min)
     radius = min_radius + normalized * (max_radius - min_radius)
-
     return radius
 
 body_radii = [calculate_radius(masses[i]) for i in range(len(body_ids))]
@@ -79,7 +77,6 @@ z_axis = arrow(pos=vector(0, 0, 0),
 spheres = []
 colors_palette = [color.red, color.cyan, color.yellow, color.green, 
                   color.magenta, color.orange, color.white, color.purple]
-
 for idx, b_id in enumerate(body_ids):
     col = colors_palette[idx % len(colors_palette)]
     obj = sphere(
@@ -93,7 +90,7 @@ for idx, b_id in enumerate(body_ids):
 
 # 7. Animation Loop
 running = True
-animation_speed = 60
+animation_speed = 90
 steps = data['step'].unique()
 current_step = 0
 
@@ -104,6 +101,7 @@ def keydown(evt):
 
 scene.bind('keydown', keydown)
 
+# Main animation loop - runs only once through all steps
 while current_step < len(steps):
     rate(animation_speed)
     
@@ -116,11 +114,8 @@ while current_step < len(steps):
             if not row.empty:
                 new_pos = vector(row['x'].values[0], row['y'].values[0], row['z'].values[0])
                 spheres[i].pos = new_pos
-
         current_step += 1
-        
-        if current_step >= len(steps):
-            current_step = 0
-            print("Simulation restarting...")
 
 print("Simulation finished.")
+while True:
+    rate(30)
