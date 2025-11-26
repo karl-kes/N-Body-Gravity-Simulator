@@ -10,7 +10,7 @@
 #include <omp.h>
 
 static constexpr double G{ 6.67430e-11 };
-static constexpr double EPSILON{ 1.0e5 };
+static constexpr double EPSILON{ 1.0e3 };
 static constexpr double CONVERT_TO_KMS{ 1e-3 };
 static constexpr double CONVERT_TO_KM{ 1e-3 };
 static constexpr double CONVERT_TO_SEC{ 1.0e-9 };
@@ -22,7 +22,7 @@ private:
     double z_;
 
 public:
-    Vec_3D ( double new_x = 0, double new_y = 0, double new_z = 0 ):
+    Vec_3D ( double new_x = 0.0, double new_y = 0.0, double new_z = 0.0 ):
     x_{ new_x },
     y_{ new_y },
     z_{ new_z } {
@@ -86,7 +86,7 @@ private:
     double mass_;
 
 public:
-    Body ( Vec_3D new_pos, Vec_3D new_vel, double new_mass ):
+    Body ( Vec_3D new_pos = 0.0, Vec_3D new_vel = 0.0, double new_mass = 0.0 ):
     pos_( new_pos ),
     vel_( new_vel ), 
     acc_{ 0, 0, 0 }, 
@@ -98,19 +98,20 @@ public:
     // Calculates new acceleration based on forces from other bodies.
     void calculate_new_acc( std::vector<Body> const &other_bodies, std::size_t const &self_idx ) {
         set_old_acc( acc_ );
-        Vec_3D total_force{};
+        Vec_3D total_acc{};
 
         for ( std::size_t idx = 0; idx < other_bodies.size(); ++idx ) {
             if ( idx == self_idx ) continue;
             
             Vec_3D R{ other_bodies[idx].get_pos() - get_pos() };
             double dist_squared{ R.norm_squared() + EPSILON * EPSILON };
-            double force_mag{ ( G * mass_ * other_bodies[idx].get_mass() ) / ( dist_squared ) };
+            if ( dist_squared > 1e24 ) continue;
+            double dist{ std::sqrt( dist_squared ) };
 
-            double dist{ R.norm() };
-            total_force += R * ( force_mag / dist );
+            // Acceleration from law of gravitation: a = R_vector * (GM / r^3) 
+            total_acc += R * ( ( G * other_bodies[idx].get_mass() ) / ( dist * dist * dist ) );
         }
-        set_acc( total_force * ( 1.0 / get_mass() ) );
+        set_acc( total_acc );
     }
 
     // Updates body.
@@ -120,11 +121,21 @@ public:
     }
 
     // Body getters:
-    const Vec_3D &get_pos() const { return pos_; }
-    const Vec_3D &get_vel() const { return vel_; }
-    const Vec_3D &get_acc() const { return acc_; }
-    const Vec_3D &get_old_acc() const { return old_acc_; }
-    double get_mass() const { return mass_; }
+    const Vec_3D &get_pos() const { 
+        return pos_;
+    }
+    const Vec_3D &get_vel() const {
+        return vel_;
+    }
+    const Vec_3D &get_acc() const {
+        return acc_;
+    }
+    const Vec_3D &get_old_acc() const {
+        return old_acc_;
+    }
+    double get_mass() const {
+        return mass_;
+    }
 
     // Body setters:
     void set_pos( Vec_3D new_pos ) {
@@ -144,11 +155,13 @@ public:
 class Simulation {
 private:
     std::vector<Body> bodies_;
+    std::string file_name;
     double dt_;
 
 public:
-    Simulation( std::vector<Body> &new_bodies, double new_dt = 1000 ):
+    Simulation( std::vector<Body> &new_bodies, std::string new_file_name = "bodies.csv", double new_dt = 1000 ):
     bodies_{ new_bodies },
+    file_name{ new_file_name },
     dt_{ new_dt } {
         // Empty constructor.
     }
@@ -163,25 +176,26 @@ public:
 
     // Helpers:
     double calculate_total_energy() const {
-        double Hamiltonian{ 0.0 };
+        double total_energy{ 0.0 };
 
         for ( std::size_t i = 0; i < bodies_.size(); ++i ) {
             for ( size_t j = i + 1; j < bodies_.size(); ++j ) {
                 Vec_3D R{ get_body(i).get_pos() - get_body(j).get_pos() };
                 double dist{ R.norm() + EPSILON };
 
-                Hamiltonian -= G * get_body(i).get_mass() * get_body(j).get_mass() / dist;
+                // Potential Energy: V = GMm / R
+                total_energy -= G * get_body(i).get_mass() * get_body(j).get_mass() / dist;
             }
-            Hamiltonian += 0.5 * get_body(i).get_mass() * get_body(i).get_vel().norm_squared();
+            // Kinetic Energy: T = 1/2 mv^2
+            total_energy += 0.5 * get_body(i).get_mass() * get_body(i).get_vel().norm_squared();
         }
-        
-        return Hamiltonian;
+        return total_energy;
     }
 
     void load_csv_bodies() {
-        std::ifstream file( "bodies.csv" );
+        std::ifstream file( file_name );
         if ( !file.is_open() ) {
-            std::cout << "Error opening bodies.csv." << std::endl;
+            std::cout << "Error opening " << file_name << std::endl;
             return;
         }
 
