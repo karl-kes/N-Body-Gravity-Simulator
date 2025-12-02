@@ -157,6 +157,8 @@ private:
     std::vector<Body> bodies_;
     std::string file_name;
     double dt_;
+    int num_steps_;
+    int num_outputs_;
 
 public:
     Simulation( std::vector<Body> &new_bodies, std::string new_file_name = "bodies.csv", double new_dt = 1000 ):
@@ -173,21 +175,38 @@ public:
     const double &get_dt() const {
         return dt_;
     }
+    const int &get_steps() const {
+        return num_steps_;
+    }
+    const int &get_outputs() const {
+        return num_outputs_;
+    }
+
+    // Setters:
+    void set_dt( double const &new_dt ) {
+        dt_ = new_dt;
+    }
+    void set_steps( double const &new_steps ) {
+        num_steps_ = new_steps;
+    }
+    void set_outputs( double const &new_outputs ) {
+        num_outputs_ = new_outputs;
+    }
 
     // Helpers:
     double calculate_total_energy() const {
         double total_energy{ 0.0 };
 
-        for ( std::size_t i = 0; i < bodies_.size(); ++i ) {
-            for ( size_t j = i + 1; j < bodies_.size(); ++j ) {
-                Vec_3D R{ get_body(i).get_pos() - get_body(j).get_pos() };
+        for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
+            for ( size_t jdx = idx + 1; jdx < bodies_.size(); ++jdx ) {
+                Vec_3D R{ get_body(idx).get_pos() - get_body(jdx).get_pos() };
                 double dist{ R.norm() + EPSILON };
 
                 // Potential Energy: V = GMm / R
-                total_energy -= G * get_body(i).get_mass() * get_body(j).get_mass() / dist;
+                total_energy -= G * get_body(idx).get_mass() * get_body(jdx).get_mass() / dist;
             }
             // Kinetic Energy: T = 1/2 mv^2
-            total_energy += 0.5 * get_body(i).get_mass() * get_body(i).get_vel().norm_squared();
+            total_energy += 0.5 * get_body(idx).get_mass() * get_body(idx).get_vel().norm_squared();
         }
         return total_energy;
     }
@@ -222,136 +241,99 @@ public:
         }
         file.close();
     }
-};
 
-// Calculates total energy of all bodies.
-double calculate_total_energy( std::vector<Body> const &bodies ) {
-    double T{ 0.0 };
-    double V{ 0.0 };
+    // Simulation:
+    void configure_sim() {
+        double temp_val{};
 
-    for ( std::size_t i = 0; i < bodies.size(); ++i ) {
-        for ( size_t j = i + 1; j < bodies.size(); ++j ) {
-            Vec_3D R{ bodies[i].get_pos() - bodies[j].get_pos() };
-            double dist{ R.norm() + EPSILON };
+        std::cout << "<--- N-Body Simulation --->" << std::endl;
 
-            V -= G * bodies[i].get_mass() * bodies[j].get_mass() / dist;
-        }
-        T += 0.5 * bodies[i].get_mass() * bodies[i].get_vel().norm_squared();
+        std::cout << "Enter number of steps: ";
+        std::cin >> temp_val;
+        set_steps( temp_val );
+
+        std::cout << "Enter number of outputs: ";
+        std::cin >> temp_val;
+        set_outputs( temp_val );
+
+        std::cout << "\nStarting N-Body Simulation..." << std::endl;
     }
     
-    return T + V;
-}
+    void run_simulation() {
+        std::ofstream out_file( "trajectories.csv" );
+        out_file << "step,body_id,x,y,z\n";
 
-// Load bodies.
-void load_csv_bodies( std::string const &file_name, std::vector<Body> &bodies ) {
-    std::ifstream file( file_name );
-    if ( !file.is_open() ) {
-        std::cout << "Error opening " << file_name << ".csv." << std::endl;
-        return;
-    }
+        // Keep values in scientific notation to 3 sig figs.
+        std::cout << std::scientific << std::setprecision( 3 );
+        double initial_energy{ calculate_total_energy() };
+        double max_energy_drift{};
 
-    std::string line{};
-    while ( std::getline( file, line ) ) {
-        if ( line.empty() || line[0] == '#' ) continue;
+        auto start_time{ std::chrono::high_resolution_clock::now() };
 
-        std::stringstream string_stream( line );
-        std::string segment{};
-        std::vector<double> values{};
+        #pragma omp parallel
+        {
+            for( int current_step = 0; current_step < get_steps(); ++current_step ) {
+                // Calculates new acceleration.
+                #pragma omp for
+                for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
+                    bodies_[idx].calculate_new_acc( bodies_, idx );
+                }
 
-        while ( std::getline( string_stream, segment, ',' ) ) {
-            values.push_back( std::stod( segment ) );
-        }
+                // Updates position and velocity for all bodies.
+                #pragma omp for
+                for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
+                    bodies_[idx].update( get_dt() );
+                }
 
-        if ( values.size() == 7 ) {
-            bodies.emplace_back( Vec_3D{ values[0], values[1], values[2] }, // Positions
-                                 Vec_3D{ values[3], values[4], values[5] }, // Velocities
-                                 values[6]                                  // Mass
-                                );
-        }
-    }
-    file.close();
-}
+                // Outputs information in specific number of outputs.
+                int output_interval{ get_steps() / get_outputs() };
 
-int main() {
-    double dt{ 1000 };
-    int steps{};
-    int num_outputs{};
+                #pragma omp single
+                {
+                    if ( current_step % output_interval == 0 || current_step == get_steps() - 1 ) {
+                        // Calculates maximum energy drift in system.
+                        double current_energy{ calculate_total_energy() };
+                        double energy_drift_percent{ 100.0 * std::abs( current_energy - initial_energy ) / std::abs( initial_energy ) };
+                        max_energy_drift = std::max( max_energy_drift, energy_drift_percent );
 
-    std::vector<Body> bodies{};
-    load_csv_bodies( "bodies.csv", bodies );
+                        // Outputs the current position for all bodies.
+                        for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
+                            const Vec_3D &curr_body_pos = bodies_[idx].get_pos();
 
-    std::cout << "<--- N-Body Simulation --->" << std::endl;
+                            out_file << current_step << "," 
+                                    << idx << ","
+                                    << curr_body_pos.get_x() << ","
+                                    << curr_body_pos.get_y() << ","
+                                    << curr_body_pos.get_z() << "\n";
+                        }
+                    }
 
-    std::cout << "Enter number of steps: ";
-    std::cin >> steps;
-    std::cout << "Enter number of outputs: ";
-    std::cin >> num_outputs;
+                    if ( current_step % 10 == 0 || current_step == get_steps() - 1 ) {
+                        float progress = ( ( current_step + 1 ) * 100.0 / get_steps() );
 
-    std::cout << "\nStarting N-Body Simulation..." << std::endl;
-    std::ofstream out_file( "trajectories.csv" );
-    out_file << "step,body_id,x,y,z\n";
-
-    // Keep values in scientific notation to 3 sig figs.
-    std::cout << std::scientific << std::setprecision( 3 );
-    double initial_energy{ calculate_total_energy( bodies ) };
-    double max_energy_drift{};
-
-    auto start_time{ std::chrono::high_resolution_clock::now() };
-
-    #pragma omp parallel
-    {
-        for( int current_step = 0; current_step < steps; ++current_step ) {
-            // Calculates new acceleration.
-            #pragma omp for
-            for ( std::size_t idx = 0; idx < bodies.size(); ++idx ) {
-                bodies[idx].calculate_new_acc( bodies, idx );
-            }
-
-            // Updates position and velocity for all bodies.
-            #pragma omp for
-            for ( std::size_t idx = 0; idx < bodies.size(); ++idx ) {
-                bodies[idx].update( dt );
-            }
-
-            // Outputs information in specific number of outputs.
-            int output_interval{ steps / num_outputs };
-
-            #pragma omp single
-            {
-                if ( current_step % output_interval == 0 || current_step == steps - 1 ) {
-                    // Calculates maximum energy drift in system.
-                    double current_energy{ calculate_total_energy( bodies ) };
-                    double energy_drift_percent{ 100.0 * std::abs( current_energy - initial_energy ) / std::abs( initial_energy ) };
-                    max_energy_drift = std::max( max_energy_drift, energy_drift_percent );
-
-                    // Outputs the current position for all bodies.
-                    for ( std::size_t idx = 0; idx < bodies.size(); ++idx ) {
-                        const Vec_3D &curr_body_pos = bodies[idx].get_pos();
-
-                        out_file << current_step << "," 
-                                 << idx << ","
-                                 << curr_body_pos.get_x() << ","
-                                 << curr_body_pos.get_y() << ","
-                                 << curr_body_pos.get_z() << "\n";
+                        std::cout << "Progress: " << std::fixed << std::setprecision( 1 ) 
+                                  << progress << "%\r" << std::flush;
                     }
                 }
-
-                if ( current_step % 10 == 0 || current_step == steps - 1 ) {
-                    float progress = ( ( current_step + 1 ) * 100.0 / steps );
-
-                    std::cout << "Progress: " << std::fixed << std::setprecision(1) 
-                              << progress << "%\r" << std::flush;
-                }
             }
         }
-    }
-    out_file.close();
-    auto time_elapsed{ ( std::chrono::high_resolution_clock::now() - start_time ).count() * CONVERT_TO_SEC };
+        out_file.close();
+        auto time_elapsed{ ( std::chrono::high_resolution_clock::now() - start_time ).count() * CONVERT_TO_SEC };
 
-    std::cout << std::endl << std::fixed << std::scientific << std::setprecision( 4 );
-    std::cout << "\nMax Energy Drift: " << max_energy_drift << "%." << std::endl;
-    std::cout << "Time elapsed: " << time_elapsed << " seconds." << std::endl;
-    std::cout << "\n<--- End of Simulation --->" << std::endl;
+        std::cout << std::endl << std::fixed << std::scientific << std::setprecision( 4 );
+        std::cout << "\nMax Energy Drift: " << max_energy_drift << "%." << std::endl;
+        std::cout << "Time elapsed: " << time_elapsed << " seconds." << std::endl;
+        std::cout << "\n<--- End of Simulation --->" << std::endl;
+    }
+};
+
+int main() {
+    std::vector<Body> bodies{};
+    Simulation Simulation{ bodies, "bodies.csv" };
+
+    Simulation.load_csv_bodies();
+    Simulation.configure_sim();
+    Simulation.run_simulation();
 
     return 0;
 }

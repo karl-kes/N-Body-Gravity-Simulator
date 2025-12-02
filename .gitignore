@@ -1,4 +1,5 @@
-*.exe
-*.csv
-.vscode/
-.vscode
+*
+
+!simulator.cpp
+!render.py
+!.gitignore
