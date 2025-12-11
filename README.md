@@ -75,7 +75,6 @@ g++ main.cpp Classes/Vec_3D/Vec_3D.cpp Classes/Body/Body.cpp Classes/Simulation/
 
 3. **Enter simulation parameters** when prompted:
    - Number of steps (e.g., 10000)
-   - Number of outputs (e.g., 1000)
 
 4. **Visualize the results**:
 

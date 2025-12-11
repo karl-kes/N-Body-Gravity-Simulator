@@ -16,11 +16,12 @@ void Body::calculate_new_acc( std::vector<Body> const &other_bodies, std::size_t
     set_old_acc( acc_ );
     Vec_3D total_acc{};
 
-    for ( std::size_t idx = 0; idx < other_bodies.size(); ++idx ) {
+    for ( std::size_t idx{}; idx < other_bodies.size(); ++idx ) {
         if ( idx == self_idx ) continue;
         
         Vec_3D R{ other_bodies[idx].get_pos() - get_pos() };
         double dist_squared{ R.norm_squared() + EPSILON * EPSILON };
+
         if ( dist_squared > MAX_INTERACTION_DIST_SQ ) continue;
         double dist{ std::sqrt( dist_squared ) };
 
@@ -52,15 +53,15 @@ double Body::get_mass() const {
 }
 
 // Body setters:
-void Body::set_pos( Vec_3D new_pos ) {
+void Body::set_pos( Vec_3D const &new_pos ) {
     pos_ = new_pos;
 }
-void Body::set_vel( Vec_3D new_vel ) {
+void Body::set_vel( Vec_3D const &new_vel ) {
     vel_ = new_vel;
 }
-void Body::set_acc( Vec_3D new_acc ) {
+void Body::set_acc( Vec_3D const &new_acc ) {
     acc_ = new_acc;
 }
-void Body::set_old_acc( Vec_3D new_old_acc ) {
+void Body::set_old_acc( Vec_3D const &new_old_acc ) {
     old_acc_ = new_old_acc;
 }

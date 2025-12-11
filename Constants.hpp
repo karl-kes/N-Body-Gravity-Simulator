@@ -7,3 +7,5 @@ static constexpr double MAX_INTERACTION_DIST_SQ{ MAX_INTERACTION_DIST * MAX_INTE
 static constexpr double CONVERT_TO_KMS{ 1e-3 };
 static constexpr double CONVERT_TO_KM{ 1e-3 };
 static constexpr double CONVERT_TO_SEC{ 1.0e-9 };
+static constexpr double SEC_TO_DAY{ 1.0 / 86400 };
+static constexpr double SEC_TO_YEAR{ 1.0 / ( 3.154e+7 ) };

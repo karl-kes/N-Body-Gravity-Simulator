@@ -32,14 +32,20 @@ void Simulation::set_steps( double const &new_steps ) {
     num_steps_ = new_steps;
 }
 void Simulation::set_outputs( double const &new_outputs ) {
-    num_outputs_ = new_outputs;
+    if ( new_outputs > 10000 ) {
+        num_outputs_ = new_outputs / 100;
+    } else if ( new_outputs > 1000 ) {
+        num_outputs_ = new_outputs / 10;
+    } else {
+        num_outputs_ = new_outputs;
+    }
 }
 
 // Helpers:
 double Simulation::calculate_total_energy() const {
     double total_energy{ 0.0 };
 
-    for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
+    for ( std::size_t idx{}; idx < bodies_.size(); ++idx ) {
         for ( size_t jdx = idx + 1; jdx < bodies_.size(); ++jdx ) {
             Vec_3D R{ get_body(idx).get_pos() - get_body(jdx).get_pos() };
             double dist{ R.norm() + EPSILON };
@@ -91,11 +97,16 @@ void Simulation::configure_sim() {
 
     std::cout << "Enter number of steps: ";
     std::cin >> temp_val;
-    set_steps( temp_val );
 
-    std::cout << "Enter number of outputs: ";
-    std::cin >> temp_val;
+    set_steps( temp_val );
     set_outputs( temp_val );
+
+    std::cout << "Time Simulated: " 
+              << dt_ * num_steps_ << " seconds | "
+              << dt_ * num_steps_ * SEC_TO_DAY << " days | "
+              << dt_ * num_steps_ * SEC_TO_YEAR << " years"
+              << std::endl;
+
 
     std::cout << "\nStarting N-Body Simulation..." << std::endl;
 }
@@ -112,7 +123,7 @@ void Simulation::run_simulation() {
 
     #pragma omp parallel
     {
-        for( int current_step = 0; current_step < get_steps(); ++current_step ) {
+        for( int current_step{}; current_step < get_steps(); ++current_step ) {
             // Calculates new acceleration.
             #pragma omp for
             for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
@@ -162,6 +173,6 @@ void Simulation::run_simulation() {
 
     std::cout << std::endl << std::fixed << std::scientific << std::setprecision( 4 );
     std::cout << "\nMax Energy Drift: " << max_energy_drift << "%." << std::endl;
-    std::cout << "Time elapsed: " << time_elapsed << " seconds." << std::endl;
+    std::cout << "Duration of Simulation: " << time_elapsed << " seconds." << std::endl;
     std::cout << "\n<--- End of Simulation --->" << std::endl;
 }

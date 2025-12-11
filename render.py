@@ -84,7 +84,7 @@ for idx, b_id in enumerate(body_ids):
         color=col, 
         make_trail=True, 
         trail_type="curve", 
-        retain=10
+        retain=25
     )
     spheres.append(obj)
 

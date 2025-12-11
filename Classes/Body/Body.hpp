@@ -29,8 +29,8 @@ public:
     double get_mass() const;
 
     // Body setters:
-    void set_pos( Vec_3D new_pos );
-    void set_vel( Vec_3D new_vel );
-    void set_acc( Vec_3D new_acc );
-    void set_old_acc( Vec_3D new_old_acc );
+    void set_pos( Vec_3D const &new_pos );
+    void set_vel( Vec_3D const &new_vel );
+    void set_acc( Vec_3D const &new_acc );
+    void set_old_acc( Vec_3D const &new_old_acc );
 };

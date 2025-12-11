@@ -17,11 +17,11 @@ int main() {
     */
     
     std::vector<Body> bodies{};
-    Simulation Simulation{ bodies, "bodies.csv", 10000 };
+    Simulation sim{ bodies, "bodies.csv", 1000 };
 
-    Simulation.load_csv_bodies();
-    Simulation.configure_sim();
-    Simulation.run_simulation();
+    sim.load_csv_bodies();
+    sim.configure_sim();
+    sim.run_simulation();
 
     return 0;
 }
