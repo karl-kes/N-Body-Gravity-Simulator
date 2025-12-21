@@ -124,16 +124,22 @@ void Simulation::run_simulation() {
     #pragma omp parallel
     {
         for( int current_step{}; current_step < get_steps(); ++current_step ) {
+            // Updates position and velocity for all bodies.
+            #pragma omp for
+            for ( std::size_t idx{}; idx < bodies_.size(); ++idx ) {
+                bodies_[idx].update_pos( get_dt() );
+            }
+            
             // Calculates new acceleration.
             #pragma omp for
-            for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
+            for ( std::size_t idx{}; idx < bodies_.size(); ++idx ) {
                 bodies_[idx].calculate_new_acc( bodies_, idx );
             }
 
             // Updates position and velocity for all bodies.
             #pragma omp for
-            for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
-                bodies_[idx].update( get_dt() );
+            for ( std::size_t idx{}; idx < bodies_.size(); ++idx ) {
+                bodies_[idx].update_vel( get_dt() );
             }
 
             // Outputs information in specific number of outputs.
@@ -148,18 +154,18 @@ void Simulation::run_simulation() {
                     max_energy_drift = std::max( max_energy_drift, energy_drift_percent );
 
                     // Outputs the current position for all bodies.
-                    for ( std::size_t idx = 0; idx < bodies_.size(); ++idx ) {
+                    for ( std::size_t idx{}; idx < bodies_.size(); ++idx ) {
                         const Vec_3D &curr_body_pos = bodies_[idx].get_pos();
 
                         out_file << current_step << "," 
-                                << idx << ","
-                                << curr_body_pos.get_x() << ","
-                                << curr_body_pos.get_y() << ","
-                                << curr_body_pos.get_z() << "\n";
+                                 << idx << ","
+                                 << curr_body_pos.get_x() << ","
+                                 << curr_body_pos.get_y() << ","
+                                 << curr_body_pos.get_z() << "\n";
                     }
                 }
 
-                if ( current_step % 10 == 0 || current_step == get_steps() - 1 ) {
+                if ( ( current_step % 10 ) == 0 || current_step == ( get_steps() - 1 ) ) {
                     float progress = ( ( current_step + 1 ) * 100.0 / get_steps() );
 
                     std::cout << "Progress: " << std::fixed << std::setprecision( 1 ) 
@@ -171,7 +177,7 @@ void Simulation::run_simulation() {
     out_file.close();
     auto time_elapsed{ ( std::chrono::high_resolution_clock::now() - start_time ).count() * CONVERT_TO_SEC };
 
-    std::cout << std::endl << std::fixed << std::scientific << std::setprecision( 4 );
+    std::cout << std::endl << std::setprecision( 6 );
     std::cout << "\nMax Energy Drift: " << max_energy_drift << "%." << std::endl;
     std::cout << "Duration of Simulation: " << time_elapsed << " seconds." << std::endl;
     std::cout << "\n<--- End of Simulation --->" << std::endl;

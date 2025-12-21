@@ -18,7 +18,7 @@ private:
     int num_outputs_;
 
 public:
-    Simulation( std::vector<Body> &new_bodies, std::string new_file_name = "bodies.csv", double new_dt = 1000 );
+    Simulation( std::vector<Body> &new_bodies, std::string new_file_name = "bodies.csv", double new_dt = 500 );
 
     // Getters:
     const Body &get_body( std::size_t idx ) const;

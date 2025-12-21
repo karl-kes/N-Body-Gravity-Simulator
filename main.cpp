@@ -17,7 +17,7 @@ int main() {
     */
     
     std::vector<Body> bodies{};
-    Simulation sim{ bodies, "bodies.csv", 1000 };
+    Simulation sim{ bodies };
 
     sim.load_csv_bodies();
     sim.configure_sim();

@@ -13,7 +13,6 @@ mass_( new_mass ) {
 
 // Calculations and updates:
 void Body::calculate_new_acc( std::vector<Body> const &other_bodies, std::size_t const &self_idx ) {
-    set_old_acc( acc_ );
     Vec_3D total_acc{};
 
     for ( std::size_t idx{}; idx < other_bodies.size(); ++idx ) {
@@ -30,9 +29,12 @@ void Body::calculate_new_acc( std::vector<Body> const &other_bodies, std::size_t
     }
     set_acc( total_acc );
 }
-void Body::update( double const &dt ) {
+void Body::update_pos( double const &dt ) {
+    set_old_acc( acc_ );
     set_pos( get_pos() + ( get_vel() * dt + get_acc() * ( 0.5 * dt * dt ) ) );
-    set_vel( get_vel() + ( ( get_acc() + get_old_acc() ) * ( 0.5 * dt ) ) );
+}
+void Body::update_vel( double const &dt ) {
+    set_vel( vel_ + ( acc_ + old_acc_ ) * ( 0.5 * dt ) );
 }
 
 // Body getters:

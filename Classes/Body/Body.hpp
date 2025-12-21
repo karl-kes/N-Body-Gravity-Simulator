@@ -19,7 +19,8 @@ public:
     void calculate_new_acc( std::vector<Body> const &other_bodies, std::size_t const &self_idx );
 
     // Updates body.
-    void update( double const &dt );
+    void update_pos( double const &dt );
+    void update_vel( double const &dt );
 
     // Body getters:
     const Vec_3D &get_pos() const;
