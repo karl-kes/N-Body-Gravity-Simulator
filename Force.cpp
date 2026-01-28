@@ -5,7 +5,7 @@ Gravity::Gravity()
 { }
 
 void Gravity::apply( std::vector<Particle> &particles ) const {
-    std::size_t N{ particles.size() };
+    std::size_t const N{ particles.size() };
     double const EPS{ 1e-9 };
 
     for ( std::size_t i = 0; i < N; ++i ) {

@@ -63,4 +63,7 @@ public:
     double *pos() noexcept { return pos_; }
     double *vel() noexcept { return vel_; }
     double *acc() noexcept { return acc_; }
+
+    // Helpers:
+    void clear_acc() { acc_x() = 0; acc_y() = 0; acc_z() = 0; };
 };

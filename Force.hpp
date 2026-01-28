@@ -3,7 +3,7 @@
 #include "Particle.hpp"
 #include <vector>
 #include <cmath>
-#include <omp.h>
+#include <cstddef>
 
 class Force_Law {
 public:
@@ -19,6 +19,5 @@ public:
     Gravity();
 
     void apply( std::vector<Particle> &particles ) const override;
-
     [[nodiscard]] double G() const { return G_; }
 };
