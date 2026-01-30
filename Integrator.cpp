@@ -1,7 +1,7 @@
 #include "Integrator.hpp"
 
 Velocity_Verlet::Velocity_Verlet( double dt )
-: dt_{ dt }
+: Integrator( dt )
 { }
 
 void Velocity_Verlet::integrate( Particles &particles, std::vector<std::unique_ptr<Force>> const &forces ) const {
