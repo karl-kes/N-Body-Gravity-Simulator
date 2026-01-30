@@ -17,10 +17,13 @@ void Simulation::run() {
         max_energy = std::max( total_energy(), max_energy );
         print_progress( curr_step, steps() );
     }
+
+    double drift{ std::abs( 100.0 * ( max_energy - inital_energy ) / inital_energy ) };
+    std::cout << "\nMax Energy Drift: " << std::scientific << std::setprecision( 6 ) << drift << "%" << std::endl;
 }
 
 void Simulation::add_force( std::unique_ptr<Force> force ) {
-    forces().emplace_back( force );
+    forces().emplace_back( std::move( force ) );
 }
 
 void Simulation::set_integrator( std::unique_ptr<Integrator> sim_integrator ) {
