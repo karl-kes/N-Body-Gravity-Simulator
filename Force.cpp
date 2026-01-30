@@ -1,7 +1,6 @@
 #include "Force.hpp"
 
 Gravity::Gravity()
-: G_{ 6.6743e-11 }
 { }
 
 void Gravity::apply( Particles &particles ) const {

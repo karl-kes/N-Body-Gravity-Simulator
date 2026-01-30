@@ -7,15 +7,23 @@
 #include <memory>
 #include <vector>
 #include <cstddef>
+#include <iomanip>
 #include <cmath>
 
 class Simulation {
 private:
+    static constexpr double G_{ 6.6743e-11 };
     Particles particles_;
     std::vector<std::unique_ptr<Force>> forces_;
     std::unique_ptr<Integrator> integrator_;
     std::size_t num_steps_;
     std::size_t output_interval_;
+
+    void print_progress( std::size_t current, std::size_t total ) const {
+        double percent{ 100.0 * current / total };
+        std::cout << "\rProgress: " << std::fixed << std::setprecision( 1 ) 
+                  << percent << "%" << std::flush;
+    }
 
 public:
     // Constructor, Destructor, Move, Copy:
@@ -33,10 +41,14 @@ public:
 
     [[nodiscard]] std::size_t steps() const { return num_steps_; }
     [[nodiscard]] std::size_t output_interval() const { return output_interval_; }
+    [[nodiscard]] double G() const { return G_; }
+
+    std::vector<std::unique_ptr<Force>> &forces() { return forces_; }
+    std::unique_ptr<Integrator> &integrator() { return integrator_; }
 
     // Simulation Functions:
     void run();
     void add_force( std::unique_ptr<Force> force );
-    void set_integrator( std::unique_ptr<Integrator> Integrator );
+    void set_integrator( std::unique_ptr<Integrator> sim_integrator );
     double total_energy() const;
 };

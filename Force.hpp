@@ -13,7 +13,8 @@ public:
 
 class Gravity : public Force {
 private:
-    double G_; // Gravitational Constant
+    // Gravitational Constant:
+    static constexpr double G_{ 6.6743e-11 };
 
 public:
     Gravity();
