@@ -14,11 +14,15 @@ void Simulation::run() {
     double max_energy{ inital_energy };
 
     auto start_time{ std::chrono::high_resolution_clock::now() };
+
     for ( std::size_t curr_step{}; curr_step < steps(); ++curr_step ) {
         integrator()->integrate( particles(), forces() );
         max_energy = std::max( total_energy(), max_energy );
-        print_progress( curr_step, steps() );
+
+        if ( curr_step % output_interval() == 0 ) { print_progress( curr_step, steps() ); }
     }
+    std::cout << "\rProgress: 100%" << std::flush;
+
     auto end_time{ std::chrono::high_resolution_clock::now() };
     auto duration{ std::chrono::duration_cast<std::chrono::milliseconds>( end_time - start_time ) };
 
