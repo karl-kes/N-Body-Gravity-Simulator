@@ -6,29 +6,27 @@ Gravity::Gravity()
 void Gravity::apply( Particles &particles ) const {
     std::size_t const N{ particles.num_particles() };
 
-    for ( std::size_t i{}; i < N; ++i ) {
-        auto &a{ particles };
-        for ( std::size_t j{i + 1}; j < N; ++j ) {
-            auto &b{ particles };
+    #pragma omp parallel for schedule( static )
+    for ( std::size_t i = 0; i < N; ++i ) {
+        double a_x{}, a_y{}, a_z{};
 
-            double const dx{ b.pos_x()[j] - a.pos_x()[i] };
-            double const dy{ b.pos_y()[j] - a.pos_y()[i] };
-            double const dz{ b.pos_z()[j] - a.pos_z()[i] };
+        for ( std::size_t j = 0; j < N; ++j ) {
+            double const dx{ particles.pos_x()[j] - particles.pos_x()[i] };
+            double const dy{ particles.pos_y()[j] - particles.pos_y()[i] };
+            double const dz{ particles.pos_z()[j] - particles.pos_z()[i] };
 
             double const R_sq{ dx*dx + dy*dy + dz*dz + constant::EPS*constant::EPS };
             double const inv_R_cb{ 1.0 / ( std::sqrt( R_sq ) * R_sq ) };
 
-            double const factor_a{ constant::G * b.mass()[j] * inv_R_cb };
-            double const factor_b{ constant::G * a.mass()[i] * inv_R_cb };
+            double const factor{ constant::G * particles.mass()[j] * inv_R_cb };
 
-
-            a.acc_x()[i] += factor_a * dx;
-            a.acc_y()[i] += factor_a * dy;
-            a.acc_z()[i] += factor_a * dz;
-
-            b.acc_x()[j] -= factor_b * dx;
-            b.acc_y()[j] -= factor_b * dy;
-            b.acc_z()[j] -= factor_b * dz;
+            a_x += factor * dx;
+            a_y += factor * dy;
+            a_z += factor * dz;
         }
+
+        particles.acc_x()[i] = a_x;
+        particles.acc_y()[i] = a_y;
+        particles.acc_z()[i] = a_z;
     }
 }

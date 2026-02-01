@@ -4,7 +4,7 @@ A high-performance N-body gravitational simulation written in C++17, featuring s
 
 ## Overview
 
-This project simulates gravitational interactions between celestial bodies using Newtonian mechanics. It implements both Velocity Verlet and Yoshida 4th-order symplectic integrators, achieving energy drift below 10⁻¹¹% over century-scale simulations. The default configuration simulates the full solar system (Sun + 8 planets + Pluto) using JPL Horizons initial conditions.
+This project simulates gravitational interactions between celestial bodies using Newtonian mechanics. It implements both Velocity Verlet and Yoshida 4th-order symplectic integrators, achieving energy drift below 10^-12% over century-scale simulations. The default configuration simulates the full solar system (Sun + 8 planets + Pluto) using JPL Horizons initial conditions.
 
 ## Features
 

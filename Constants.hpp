@@ -12,7 +12,7 @@ namespace constant {
     // Parameters:
     inline static constexpr double dt{ 3600 }; // s
     inline static constexpr std::size_t steps_per_year{ 8766 };
-    inline static constexpr std::size_t num_years{ 10 };
+    inline static constexpr std::size_t num_years{ 1 };
     inline static constexpr std::size_t total_steps{ steps_per_year * num_years };
     inline static constexpr std::size_t output_interval{ steps_per_year };
 }
