@@ -9,8 +9,7 @@
 #include <cmath>
 #include <string>
 
-class Body {
-public:
+struct Body {
     const char* name;
     double mass;
     double x, y, z;
@@ -89,11 +88,12 @@ int main() {
     // Final distances
     std::cout << "\nFinal distances from Sun:" << std::endl;
     for ( std::size_t i{ 1 }; i < num_bodies; ++i ) {
-        double R{ std::sqrt(
-            std::pow( sim.particles().pos_x( i ) - sim.particles().pos_x( 0 ), 2 ) +
-            std::pow( sim.particles().pos_y( i ) - sim.particles().pos_y( 0 ), 2 ) +
-            std::pow( sim.particles().pos_z( i ) - sim.particles().pos_z( 0 ), 2 )
-        ) };
+        double const dist_x{ sim.particles().pos_x(i) - sim.particles().pos_x(0) };
+        double const dist_y{ sim.particles().pos_y(i) - sim.particles().pos_y(0) };
+        double const dist_z{ sim.particles().pos_z(i) - sim.particles().pos_z(0) };
+
+        double R{ std::sqrt( dist_x*dist_x + dist_y*dist_y + dist_z*dist_z ) };
+
         std::cout << std::left << std::setw( 10 ) << bodies[i].name
                   << std::fixed << std::setprecision( 4 )
                   << R / constant::AU << " AU" << std::endl;

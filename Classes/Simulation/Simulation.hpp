@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <cmath>
 #include <chrono>
+#include <omp.h>
 
 class Simulation {
 private:
@@ -19,6 +20,8 @@ private:
     std::unique_ptr<Integrator> integrator_;
     std::size_t num_steps_;
     std::size_t output_interval_;
+
+    double total_energy() const;
 
     void print_progress( std::size_t current, std::size_t total ) const {
         double percent{ 100.0 * current / total };
@@ -50,5 +53,4 @@ public:
     void run();
     void add_force( std::unique_ptr<Force> force );
     void set_integrator( std::unique_ptr<Integrator> sim_integrator );
-    double total_energy() const;
 };
