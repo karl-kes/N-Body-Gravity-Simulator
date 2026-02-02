@@ -27,6 +27,7 @@ private:
 
     void print_progress( std::size_t current, std::size_t total ) const {
         double percent{ 100.0 * current / total };
+
         std::cout << "\rProgress: " << std::fixed << std::setprecision(0) 
                   << percent << "%" << std::flush;
     }

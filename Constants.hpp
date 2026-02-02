@@ -8,7 +8,7 @@ namespace constant {
     inline static constexpr double EPS{ 1e-9 };
     inline static constexpr double AU{ 1.496e11 }; // m
     inline static constexpr double KM_TO_M{ 1e3 }; // km to m
-\
+
     inline static constexpr double SECONDS_PER_HOUR{ 3600.0 };
     inline static constexpr double SECONDS_PER_DAY{ 86400.0 };
     inline static constexpr double DAYS_PER_YEAR{ 365.25 };

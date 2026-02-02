@@ -11,6 +11,8 @@ void Gravity::apply( Particles &particles ) const {
         double a_x{}, a_y{}, a_z{};
 
         for ( std::size_t j = 0; j < N; ++j ) {
+            if ( i == j ) continue;
+
             double const dx{ particles.pos_x()[j] - particles.pos_x()[i] };
             double const dy{ particles.pos_y()[j] - particles.pos_y()[i] };
             double const dz{ particles.pos_z()[j] - particles.pos_z()[i] };
