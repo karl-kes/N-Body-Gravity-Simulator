@@ -93,3 +93,9 @@ void Simulation::initial_output() {
     std::cout << "Duration: " << constant::num_years << " years" << std::endl;
     std::cout << std::endl;
 }
+
+void Simulation::output_positions( Body const *bodies, std::size_t const curr_time ) const {
+    std::size_t const size{ sizeof(bodies) / sizeof(bodies[0]) };
+
+
+}

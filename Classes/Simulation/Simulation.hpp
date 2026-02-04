@@ -26,20 +26,17 @@ private:
     double total_energy() const;
 
     void print_progress( std::size_t const current, std::size_t const total ) const {
-        double percent{ 100.0 * current / total };
+        double const percent{ 100.0 * current / total };
 
         std::cout << "\rProgress: " << std::fixed << std::setprecision(0) 
                   << percent << "%" << std::flush;
     }
 
 public:
-    // Constructor, Destructor, Move, Copy:
-    explicit Simulation( std::size_t const num_particles, std::size_t const steps, std::size_t const output_interval );
-    ~Simulation() = default;
-    Simulation( const Simulation& ) = delete;
-    Simulation& operator=( const Simulation& ) = delete;
-    Simulation( Simulation&& ) = delete;
-    Simulation& operator=( Simulation&& ) = delete;
+    // Constructor:
+    explicit Simulation( std::size_t const num_particles,
+                         std::size_t const steps, 
+                         std::size_t const output_interval );
 
     // Getters & Setters:
     // Particles:
@@ -57,6 +54,7 @@ public:
     void run();
     void add_force( std::unique_ptr<Force> force );
     void set_integrator( std::unique_ptr<Integrator> sim_integrator );
+    void output_positions( Body const *bodies, std::size_t const curr_time ) const;
     void final_output( Body const *bodies ) const;
     void initial_output();
 };

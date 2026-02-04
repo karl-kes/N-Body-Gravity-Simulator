@@ -17,7 +17,8 @@ int main() {
         ./main.exe
     */
 
-    constexpr std::size_t num_bodies{ sizeof(bodies) / sizeof(bodies[0]) };
+    // Determine number of bodies:
+    static constexpr std::size_t num_bodies{ sizeof(bodies) / sizeof(bodies[0]) };
 
     // Initialize and prepare simulation:
     Simulation sim{ num_bodies, constant::total_steps, constant::output_interval };

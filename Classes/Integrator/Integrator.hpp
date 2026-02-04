@@ -13,6 +13,7 @@ class Integrator {
 protected:
     double dt_;
     std::string name_;
+    
 public:
     Integrator( double dt, std::string const &name ) 
     : dt_{ dt }
