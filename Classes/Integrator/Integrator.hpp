@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <omp.h>
+#include <cstring>
 
 class Integrator {
 protected:

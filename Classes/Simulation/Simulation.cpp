@@ -64,7 +64,7 @@ double Simulation::total_energy() const {
     constexpr double OMP_THRESHOLD{ constant::OMP_THRESHOLD };
 
     double kinetic_energy{};
-    #pragma omp parallel for reduction( +:kinetic_energy ) schedule( static ) if ( N >= OMP_THRESHOLD )
+    #pragma omp parallel for reduction( +:kinetic_energy ) schedule( static )
     for ( std::size_t i = 0; i < N; ++i ) {
         double const vel_sq{ vx[i]*vx[i] + vy[i]*vy[i] + vz[i]*vz[i]  };
 
@@ -72,7 +72,7 @@ double Simulation::total_energy() const {
     }
 
     double potential_energy{};
-    #pragma omp parallel for reduction( +:potential_energy ) schedule( static ) if ( N >= OMP_THRESHOLD )
+    #pragma omp parallel for reduction( +:potential_energy ) schedule( guided )
     for ( std::size_t i = 0; i < N; ++i ) {
         double const pxi{ px[i] }, pyi{ py[i] }, pzi{ pz[i] };
         double const mi{ mass[i] };
