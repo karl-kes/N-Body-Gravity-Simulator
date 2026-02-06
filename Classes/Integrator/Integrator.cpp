@@ -1,7 +1,6 @@
 #include "Integrator.hpp"
 
 #define RESTRICT __restrict
-
 Velocity_Verlet::Velocity_Verlet( double dt )
 : Integrator{ dt, "Velocity Verlet" }
 { }
@@ -9,7 +8,7 @@ Velocity_Verlet::Velocity_Verlet( double dt )
 void Velocity_Verlet::integrate( Particles &particles, std::vector<std::unique_ptr<Force>> const &forces ) const {
     std::size_t const N{ particles.num_particles() };
 
-    #pragma omp parallel for schedule( static )
+    #pragma omp parallel for schedule( static ) if ( N >= 2 * constant::OMP_THRESHOLD )
     for ( std::size_t i = 0; i < N; ++i ) {
         particles.pos_x()[i] += dt() * ( particles.vel_x()[i] + 0.5 * particles.acc_x()[i] * dt() );
         particles.pos_y()[i] += dt() * ( particles.vel_y()[i] + 0.5 * particles.acc_y()[i] * dt() );
@@ -28,7 +27,7 @@ void Velocity_Verlet::integrate( Particles &particles, std::vector<std::unique_p
         force->apply( particles );
     }
 
-    #pragma omp parallel for schedule( static )
+    #pragma omp parallel for schedule( static ) if ( N >= 2 * constant::OMP_THRESHOLD )
     for ( std::size_t i = 0; i < N; ++i ) {
         particles.vel_x()[i] += 0.5 * ( particles.old_acc_x()[i] + particles.acc_x()[i] ) * dt();
         particles.vel_y()[i] += 0.5 * ( particles.old_acc_y()[i] + particles.acc_y()[i] ) * dt();
@@ -64,10 +63,12 @@ void Yoshida::integrate( Particles &particles, std::vector<std::unique_ptr<Force
     double* RESTRICT ay{ particles.acc_y().get() };
     double* RESTRICT az{ particles.acc_z().get() };
 
+    constexpr double OMP_THRESHOLD{ 2 * constant::OMP_THRESHOLD };
+
     auto calculate_pos = [&]( double const c ) {
         double const c_dt{ c * dt() };
 
-        #pragma omp parallel for schedule( static )
+        #pragma omp parallel for schedule( static ) if ( N >= 2 * constant::OMP_THRESHOLD )
         for ( std::size_t i = 0; i < N; ++i ) {
             px[i] += c_dt * vx[i];
             py[i] += c_dt * vy[i];
@@ -75,8 +76,8 @@ void Yoshida::integrate( Particles &particles, std::vector<std::unique_ptr<Force
         }
     };
 
-    auto apply_force = [&](){
-        #pragma omp parallel for schedule( static )
+    auto apply_force = [&]() {
+        #pragma omp parallel for schedule( static ) if ( N >= 2 * constant::OMP_THRESHOLD )
         for ( std::size_t i = 0; i < N; ++i ) {
             ax[i] = 0.0;
             ay[i] = 0.0;
@@ -90,7 +91,7 @@ void Yoshida::integrate( Particles &particles, std::vector<std::unique_ptr<Force
 
     auto calculate_vel = [&]( double const d ) {
         double const d_dt{ d * dt() };
-        #pragma omp parallel for schedule( static )
+        #pragma omp parallel for schedule( static ) if ( N >= 2 * constant::OMP_THRESHOLD )
         for ( std::size_t i = 0; i < N; ++i ) {
             vx[i] += d_dt * ax[i];
             vy[i] += d_dt * ay[i];

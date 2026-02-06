@@ -19,6 +19,7 @@ public:
     : dt_{ dt }
     , name_{name }
     { }
+    
     virtual ~Integrator() = default;
     virtual void integrate( Particles &particles, std::vector<std::unique_ptr<Force>> const &forces ) const = 0;
     [[nodiscard]] double dt() const { return dt_; }

@@ -48,7 +48,6 @@ void Simulation::set_integrator( std::unique_ptr<Integrator> sim_integrator ) {
 
 double Simulation::total_energy() const {
     std::size_t const N{ particles().num_particles() };
-    double energy{};
 
     double* RESTRICT px{ particles().pos_x().get() };
     double* RESTRICT py{ particles().pos_y().get() };
@@ -62,31 +61,39 @@ double Simulation::total_energy() const {
 
     constexpr double eps_sq{ constant::EPS*constant::EPS };
     constexpr double G{ constant::G };
+    constexpr double OMP_THRESHOLD{ constant::OMP_THRESHOLD };
 
-    #pragma omp parallel for reduction( +:energy ) schedule( static )
+    double kinetic_energy{};
+    #pragma omp parallel for reduction( +:kinetic_energy ) schedule( static ) if ( N >= OMP_THRESHOLD )
     for ( std::size_t i = 0; i < N; ++i ) {
         double const vel_sq{ vx[i]*vx[i] + vy[i]*vy[i] + vz[i]*vz[i]  };
 
-        // Kinetic Energy:
-        // K = 1/2 * m * v^2
-        energy += 0.5 * mass[i] * vel_sq;
+        kinetic_energy += 0.5 * mass[i] * vel_sq;
+    }
 
+    double potential_energy{};
+    #pragma omp parallel for reduction( +:potential_energy ) schedule( static ) if ( N >= OMP_THRESHOLD )
+    for ( std::size_t i = 0; i < N; ++i ) {
+        double const pxi{ px[i] }, pyi{ py[i] }, pzi{ pz[i] };
+        double const mi{ mass[i] };
+        double U_i{};
+
+        #pragma omp simd reduction( +:U_i )
         for ( std::size_t j = i + 1; j < N; ++j ) {
-            double const dist_x{ px[j] - px[i] };
-            double const dist_y{ py[j] - py[i] };
-            double const dist_z{ pz[j] - pz[i] };
+            double const dx{ px[j] - pxi };
+            double const dy{ py[j] - pyi };
+            double const dz{ pz[j] - pzi };
 
-            double const dist_sq{ dist_x*dist_x + dist_y*dist_y + dist_z*dist_z + eps_sq };
-
+            double const dist_sq{ dx*dx + dy*dy + dz*dz + eps_sq };
             double const inv_R{ 1.0 / std::sqrt( dist_sq ) };
 
-            // Potential Energy:
-            // U = -G * m_1 * m_2 / R
-            energy -= G * mass[i] * mass[j] * inv_R;
+            U_i += mass[j] * inv_R;
         }
+
+        potential_energy -= G * mi * U_i;
     }
     
-    return energy;
+    return kinetic_energy + potential_energy;
 }
 
 void Simulation::final_output( Body const *bodies ) const {

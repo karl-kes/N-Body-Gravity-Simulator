@@ -17,6 +17,5 @@ public:
 class Gravity : public Force {
 public:
     Gravity();
-
     void apply( Particles &particles ) const override;
 };
