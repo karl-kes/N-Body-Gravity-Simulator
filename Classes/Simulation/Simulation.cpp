@@ -1,5 +1,7 @@
 #include "Simulation.hpp"
 
+#define RESTRICT __restrict
+
 Simulation::Simulation( std::size_t const num_particles, std::size_t const steps, std::size_t const output_interval )
 : particles_{ num_particles }
 , forces_{}
@@ -10,15 +12,20 @@ Simulation::Simulation( std::size_t const num_particles, std::size_t const steps
 { }
 
 void Simulation::run() {
-    double const inital_energy{ total_energy() };
-    double max_energy{ inital_energy };
+    double const initial_energy{ total_energy() };
+    double max_energy{ initial_energy };
+    double min_energy{ initial_energy };
 
     auto const start_time{ std::chrono::high_resolution_clock::now() };
 
     for ( std::size_t curr_step{}; curr_step < steps(); ++curr_step ) {
         integrator()->integrate( particles(), forces() );
-        max_energy = std::max( total_energy(), max_energy );
 
+        if ( curr_step % ( constant::steps_per_year / 12 ) == 0 ) {
+            double const E{ total_energy() };
+            max_energy = std::max( E, max_energy );
+            min_energy = std::min( E, min_energy );
+        }
         if ( curr_step % output_interval() == 0 ) { print_progress( curr_step, steps() ); }
     }
     std::cout << "\rProgress: 100%" << std::flush;
@@ -26,7 +33,7 @@ void Simulation::run() {
     auto const end_time{ std::chrono::high_resolution_clock::now() };
     auto const duration{ std::chrono::duration_cast<std::chrono::milliseconds>( end_time - start_time ) };
 
-    double const drift{ std::abs( 100.0 * ( max_energy - inital_energy ) / inital_energy ) };
+    double const drift{ std::abs( 100.0 * ( max_energy - min_energy ) / initial_energy ) };
     std::cout << "\nMax Energy Drift: " << std::scientific << std::setprecision( 6 ) << drift << "%" << std::endl;
     std::cout << "Duration of Simulation: " << duration.count() << " ms" << std::endl;
 }
@@ -43,28 +50,39 @@ double Simulation::total_energy() const {
     std::size_t const N{ particles().num_particles() };
     double energy{};
 
+    double* RESTRICT px{ particles().pos_x().get() };
+    double* RESTRICT py{ particles().pos_y().get() };
+    double* RESTRICT pz{ particles().pos_z().get() };
+
+    double* RESTRICT vx{ particles().vel_x().get() };
+    double* RESTRICT vy{ particles().vel_y().get() };
+    double* RESTRICT vz{ particles().vel_z().get() };
+
+    double const* RESTRICT mass{ particles().mass().get() };
+
+    constexpr double eps_sq{ constant::EPS*constant::EPS };
+    constexpr double G{ constant::G };
+
     #pragma omp parallel for reduction( +:energy ) schedule( static )
     for ( std::size_t i = 0; i < N; ++i ) {
-        double const vel_sq{ particles().vel_x()[i]*particles().vel_x()[i] +
-                             particles().vel_y()[i]*particles().vel_y()[i] +
-                             particles().vel_z()[i]*particles().vel_z()[i]  };
+        double const vel_sq{ vx[i]*vx[i] + vy[i]*vy[i] + vz[i]*vz[i]  };
 
         // Kinetic Energy:
         // K = 1/2 * m * v^2
-        energy += 0.5 * particles().mass()[i] * vel_sq;
+        energy += 0.5 * mass[i] * vel_sq;
 
         for ( std::size_t j = i + 1; j < N; ++j ) {
-            double const dist_x{ particles().pos_x()[j] - particles().pos_x()[i] };
-            double const dist_y{ particles().pos_y()[j] - particles().pos_y()[i] };
-            double const dist_z{ particles().pos_z()[j] - particles().pos_z()[i] };
+            double const dist_x{ px[j] - px[i] };
+            double const dist_y{ py[j] - py[i] };
+            double const dist_z{ pz[j] - pz[i] };
 
-            double const dist_sq{ dist_x*dist_x + dist_y*dist_y + dist_z*dist_z + constant::EPS*constant::EPS };
+            double const dist_sq{ dist_x*dist_x + dist_y*dist_y + dist_z*dist_z + eps_sq };
 
             double const inv_R{ 1.0 / std::sqrt( dist_sq ) };
 
             // Potential Energy:
             // U = -G * m_1 * m_2 / R
-            energy -= constant::G * particles().mass()[i] * particles().mass()[j] * inv_R;
+            energy -= G * mass[i] * mass[j] * inv_R;
         }
     }
     
@@ -91,6 +109,7 @@ void Simulation::initial_output() {
     std::cout << "Bodies: " << num_bodies() << std::endl;
     std::cout << "Integrator: " << integrator()->name() << std::endl;
     std::cout << "Duration: " << constant::num_years << " years" << std::endl;
+    std::cout << "Post-Newtonian: " << ( constant::ENABLE_PN ? "Enabled" : "Disabled" ) << std::endl;
     std::cout << std::endl;
 }
 

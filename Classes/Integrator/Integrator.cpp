@@ -1,5 +1,7 @@
 #include "Integrator.hpp"
 
+#define RESTRICT __restrict
+
 Velocity_Verlet::Velocity_Verlet( double dt )
 : Integrator{ dt, "Velocity Verlet" }
 { }
@@ -50,21 +52,35 @@ Yoshida::Yoshida( double const dt )
 void Yoshida::integrate( Particles &particles, std::vector<std::unique_ptr<Force>> const &forces ) const {
     std::size_t const N{ particles.num_particles() };
 
-    auto calculate_pos = [&]( double const c ){
+    double* RESTRICT px{ particles.pos_x().get() };
+    double* RESTRICT py{ particles.pos_y().get() };
+    double* RESTRICT pz{ particles.pos_z().get() };
+
+    double* RESTRICT vx{ particles.vel_x().get() };
+    double* RESTRICT vy{ particles.vel_y().get() };
+    double* RESTRICT vz{ particles.vel_z().get() };
+
+    double* RESTRICT ax{ particles.acc_x().get() };
+    double* RESTRICT ay{ particles.acc_y().get() };
+    double* RESTRICT az{ particles.acc_z().get() };
+
+    auto calculate_pos = [&]( double const c ) {
+        double const c_dt{ c * dt() };
+
         #pragma omp parallel for schedule( static )
         for ( std::size_t i = 0; i < N; ++i ) {
-            particles.pos_x()[i] += c * dt() * particles.vel_x()[i];
-            particles.pos_y()[i] += c * dt() * particles.vel_y()[i];
-            particles.pos_z()[i] += c * dt() * particles.vel_z()[i];
+            px[i] += c_dt * vx[i];
+            py[i] += c_dt * vy[i];
+            pz[i] += c_dt * vz[i];
         }
     };
 
     auto apply_force = [&](){
         #pragma omp parallel for schedule( static )
         for ( std::size_t i = 0; i < N; ++i ) {
-            particles.acc_x()[i] = 0.0;
-            particles.acc_y()[i] = 0.0;
-            particles.acc_z()[i] = 0.0;
+            ax[i] = 0.0;
+            ay[i] = 0.0;
+            az[i] = 0.0;
         }
 
         for ( auto const &force : forces ) {
@@ -72,12 +88,13 @@ void Yoshida::integrate( Particles &particles, std::vector<std::unique_ptr<Force
         };
     };
 
-    auto calculate_vel = [&]( double const d ){
+    auto calculate_vel = [&]( double const d ) {
+        double const d_dt{ d * dt() };
         #pragma omp parallel for schedule( static )
         for ( std::size_t i = 0; i < N; ++i ) {
-            particles.vel_x()[i] += d * dt() * particles.acc_x()[i];
-            particles.vel_y()[i] += d * dt() * particles.acc_y()[i];
-            particles.vel_z()[i] += d * dt() * particles.acc_z()[i];
+            vx[i] += d_dt * ax[i];
+            vy[i] += d_dt * ay[i];
+            vz[i] += d_dt * az[i];
         }
     };
 

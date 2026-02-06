@@ -6,6 +6,8 @@ namespace constant {
     // Physical Constants:
     inline static constexpr double G{ 6.6743e-11 };
     inline static constexpr double EPS{ 1e-9 };
+    inline static constexpr double C{ 299792458.0 }; // m/s
+    inline static constexpr double C_SQ{ C*C };
     inline static constexpr double AU{ 1.496e11 }; // m
     inline static constexpr double KM_TO_M{ 1e3 }; // km to m
 
@@ -20,4 +22,7 @@ namespace constant {
     inline static constexpr std::size_t num_years{ 100 };
     inline static constexpr std::size_t total_steps{ steps_per_year * num_years };
     inline static constexpr std::size_t output_interval{ steps_per_year };
+
+    // Post Newton GR Term:
+    inline static constexpr bool ENABLE_PN{ true };
 }
