@@ -49,50 +49,68 @@ void Simulation::set_integrator( std::unique_ptr<Integrator> sim_integrator ) {
 double Simulation::total_energy() const {
     std::size_t const N{ particles().num_particles() };
 
-    double* RESTRICT px{ particles().pos_x().get() };
-    double* RESTRICT py{ particles().pos_y().get() };
-    double* RESTRICT pz{ particles().pos_z().get() };
-
-    double* RESTRICT vx{ particles().vel_x().get() };
-    double* RESTRICT vy{ particles().vel_y().get() };
-    double* RESTRICT vz{ particles().vel_z().get() };
-
+    double const* RESTRICT px{ particles().pos_x().get() };
+    double const* RESTRICT py{ particles().pos_y().get() };
+    double const* RESTRICT pz{ particles().pos_z().get() };
+    double const* RESTRICT vx{ particles().vel_x().get() };
+    double const* RESTRICT vy{ particles().vel_y().get() };
+    double const* RESTRICT vz{ particles().vel_z().get() };
     double const* RESTRICT mass{ particles().mass().get() };
 
-    constexpr double eps_sq{ constant::EPS*constant::EPS };
+    constexpr double eps_sq{ constant::EPS * constant::EPS };
     constexpr double G{ constant::G };
     constexpr double OMP_THRESHOLD{ constant::OMP_THRESHOLD };
 
-    double kinetic_energy{};
-    #pragma omp parallel for reduction( +:kinetic_energy ) schedule( static )
-    for ( std::size_t i = 0; i < N; ++i ) {
-        double const vel_sq{ vx[i]*vx[i] + vy[i]*vy[i] + vz[i]*vz[i]  };
+    double kinetic_energy{ 0.0 };
+    auto kinetic_kernel = [=]( std::size_t i ) -> double {
+        double const v_sq{ vx[i]*vx[i] + vy[i]*vy[i] + vz[i]*vz[i] };
+        return 0.5 * mass[i] * v_sq;
+    };
 
-        kinetic_energy += 0.5 * mass[i] * vel_sq;
-    }
-
-    double potential_energy{};
-    #pragma omp parallel for reduction( +:potential_energy ) schedule( guided )
-    for ( std::size_t i = 0; i < N; ++i ) {
+    double potential_energy{ 0.0 };
+    auto potential_kernel = [=]( std::size_t i ) -> double {
         double const pxi{ px[i] }, pyi{ py[i] }, pzi{ pz[i] };
         double const mi{ mass[i] };
-        double U_i{};
+        double row_pot{ 0.0 };
 
-        #pragma omp simd reduction( +:U_i )
+        #pragma omp simd reduction( +:row_pot )
         for ( std::size_t j = i + 1; j < N; ++j ) {
             double const dx{ px[j] - pxi };
             double const dy{ py[j] - pyi };
             double const dz{ pz[j] - pzi };
 
-            double const dist_sq{ dx*dx + dy*dy + dz*dz + eps_sq };
-            double const inv_R{ 1.0 / std::sqrt( dist_sq ) };
+            double const R_sq{ dx*dx + dy*dy + dz*dz + eps_sq };
+            double const inv_R{ 1.0 / std::sqrt( R_sq ) };
 
-            U_i += mass[j] * inv_R;
+            row_pot -= mass[j] * inv_R;
         }
+        
+        return G * mi * row_pot;
+    };
 
-        potential_energy -= G * mi * U_i;
+    if ( N >= OMP_THRESHOLD ) {
+        #pragma omp parallel for simd reduction( +:kinetic_energy ) schedule( static )
+        for ( std::size_t i = 0; i < N; ++i ) {
+            kinetic_energy += kinetic_kernel(i); 
+        }
+    } else {
+        #pragma omp simd reduction( +:kinetic_energy )
+        for ( std::size_t i = 0; i < N; ++i ) {
+            kinetic_energy += kinetic_kernel(i); 
+        }
     }
-    
+
+    if ( N >= OMP_THRESHOLD ) {
+        #pragma omp parallel for reduction( +:potential_energy ) schedule( guided )
+        for ( std::size_t i = 0; i < N; ++i ) {
+            potential_energy += potential_kernel( i );
+        }
+    } else {
+        for ( std::size_t i = 0; i < N; ++i ) {
+            potential_energy += potential_kernel( i );
+        }
+    }
+
     return kinetic_energy + potential_energy;
 }
 

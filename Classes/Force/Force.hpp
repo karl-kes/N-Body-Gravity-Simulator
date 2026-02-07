@@ -3,6 +3,8 @@
 #include "../Particle/Particle.hpp"
 #include "../../Constants.hpp"
 
+#define INLINE __forceinline
+
 #include <vector>
 #include <cmath>
 #include <cstddef>
@@ -17,13 +19,14 @@ public:
 class Gravity : public Force {
 public:
     Gravity();
-    inline void compute_forces(
-        double pxi, double pyi, double pzi, double mi,
-        double vxi, double vyi, double vzi,
-        double pxj, double pyj, double pzj, double mj,
-        double vxj, double vyj, double vzj,
-        double& a_xi, double& a_yi, double& a_zi,
-        double G, double eps_sq, double c_sq 
-    ) const;
+    static void INLINE compute_forces(
+        double const pxi, double const pyi, double const pzi, double const mi,
+        double const vxi, double const vyi, double const vzi,
+        double const pxj, double const pyj, double const pzj, double const mj,
+        double const vxj, double const vyj, double const vzj,
+        double &a_xi, double &a_yi, double &a_zi,
+        double const G, double const eps_sq, double const c_sq, double const mask
+    );
+
     void apply( Particles &particles ) const override;
 };

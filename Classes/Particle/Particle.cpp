@@ -21,4 +21,6 @@ Particles::Particles( std::size_t const num_particles )
     old_acc_x_ = allocate();
     old_acc_y_ = allocate();
     old_acc_z_ = allocate();
+
+    potential_energy_ = allocate();
 }

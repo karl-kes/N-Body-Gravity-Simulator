@@ -1,6 +1,7 @@
 #include "Integrator.hpp"
 
 #define RESTRICT __restrict
+
 Velocity_Verlet::Velocity_Verlet( double dt )
 : Integrator{ dt, "Velocity Verlet" }
 { }

@@ -17,6 +17,9 @@ private:
     std::unique_ptr<double[]> acc_x_, acc_y_, acc_z_; // m/s^2
     std::unique_ptr<double[]> old_acc_x_, old_acc_y_, old_acc_z_; // m/s^2
 
+    // Potential Energy:
+    std::unique_ptr<double[]> potential_energy_;
+
 public:
     // Constructor, Destructor, Copy, Move:
     explicit Particles( std::size_t const num_particles );
@@ -67,6 +70,8 @@ public:
 
     [[nodiscard]] const std::unique_ptr<double[]> &mass() const { return mass_; }
 
+    [[nodiscard]] const std::unique_ptr<double[]> &potential_energy() const { return potential_energy_; }
+
     // Setters:
     // Mass:
     std::unique_ptr<double[]> &mass() { return mass_; }
@@ -89,4 +94,6 @@ public:
     std::unique_ptr<double[]> &old_acc_x() { return old_acc_x_; }
     std::unique_ptr<double[]> &old_acc_y() { return old_acc_y_; }
     std::unique_ptr<double[]> &old_acc_z() { return old_acc_z_; }
+
+    std::unique_ptr<double[]> &potential_energy() { return potential_energy_; }
 };
