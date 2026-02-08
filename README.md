@@ -1,4 +1,4 @@
-# N-Body Gravitational Simulator
+# N-Body Physics Engine
 
 A high-performance N-body gravitational simulator written in C++17, validated against NASA JPL Horizons ephemeris data. Simulates 35 solar system bodies (10 planets + 25 moons) over 100 years with 0.05% average positional deviation from NASA's DE441 planetary ephemeris and machine-precision energy conservation.
 
