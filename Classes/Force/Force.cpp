@@ -28,17 +28,17 @@ void INLINE Gravity::compute_forces (
     double f_y{ G_mj_R_inv_cb * dy };
     double f_z{ G_mj_R_inv_cb * dz };
 
-    if ( config::ENABLE_PN ) {
-        double const v_sq_i{ vxi*vxi + vyi*vyi + vzi*vzi };
-        double const r_dot_v_i{ dx*vxi + dy*vyi + dz*vzi };
-        double const coef_i{ G * mj * R_inv * R_inv * R_inv / c_sq };
-        double const rad_term_i{ 4.0 * G * mj * R_inv - v_sq_i };
-        double const vel_term_i{ 4.0 * r_dot_v_i * R_inv };
+    double const PN_Mask{ config::ENABLE_PN ? 1.0 : 0.0 };
+    
+    double const v_sq_i{ vxi*vxi + vyi*vyi + vzi*vzi };
+    double const r_dot_v_i{ dx*vxi + dy*vyi + dz*vzi };
+    double const coef_i{ G * mj * R_inv * R_inv * R_inv / c_sq };
+    double const rad_term_i{ 4.0 * G * mj * R_inv - v_sq_i };
+    double const vel_term_i{ 4.0 * r_dot_v_i * R_inv };
 
-        f_x += coef_i * ( rad_term_i * dx + vel_term_i * vxi );
-        f_y += coef_i * ( rad_term_i * dy + vel_term_i * vyi );
-        f_z += coef_i * ( rad_term_i * dz + vel_term_i * vzi );
-    }
+    f_x += PN_Mask * coef_i * ( rad_term_i * dx + vel_term_i * vxi );
+    f_y += PN_Mask * coef_i * ( rad_term_i * dy + vel_term_i * vyi );
+    f_z += PN_Mask * coef_i * ( rad_term_i * dz + vel_term_i * vzi );
 
     a_xi += mask * f_x;
     a_yi += mask * f_y;
