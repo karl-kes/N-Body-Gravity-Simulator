@@ -14,7 +14,7 @@ int main() {
     /*
         To compile and run:
 
-        python jpl_compare.py fetch --moons
+        python jpl_compare.py fetch --moons --start 1950-01-01
         g++ -std=c++17 -O3 -march=native -fopenmp *.cpp Classes/Force/*.cpp Classes/Integrator/*.cpp Classes/Particle/*.cpp Classes/Simulation/*.cpp -o main.exe
         ./main.exe
         python jpl_compare.py compare

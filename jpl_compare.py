@@ -3,6 +3,9 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict
+import ssl
+
+ssl._create_default_https_context = ssl._create_unverified_context
 
 # Usage (reads config from Config.hpp automatically):
 # python jpl_compare.py fetch --moons
