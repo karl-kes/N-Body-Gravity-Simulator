@@ -1,131 +1,164 @@
-# N-Body Physics Engine
+# N-Body Gravitational Simulator
 
-A high-performance N-body gravitational simulator written in C++17, validated against NASA JPL Horizons ephemeris data. Simulates 35 solar system bodies (10 planets + 25 moons) over 100 years with 0.05% average positional deviation from NASA's DE441 planetary ephemeris and machine-precision energy conservation.
+A high-performance N-body gravitational simulator for solar system dynamics, written in C++17. Integrates 35 bodies (the Sun, 8 planets, Pluto, and 25 natural satellites) over multi-century timescales using a 4th-order Yoshida symplectic integrator, validated against NASA JPL Horizons DE441 ephemeris data.
 
-## Results
+📄 **[Technical Paper](docs/N_Body_Technical_Paper.pdf)** — Full derivations, validation methodology, and error analysis.
 
-**100-year simulation, 35 bodies, dt = 3600s, Yoshida 4th-order symplectic integrator:**
+---
+
+## Key Results
+
+**100-year simulation (1950–2050), 35 bodies, Δt = 360 s, Yoshida 4th-order:**
 
 | Metric | Value |
 |---|---|
-| Average relative error | 0.05% |
-| Worst-case error (Ganymede) | 0.29% |
-| Planet error range | 0.00003% – 0.10% |
-| Energy conservation | 4.2e-8 % drift |
-| Runtime (35 bodies, 100 yr) | ~7009 milliseconds |
+| Mean max relative error | 0.053% |
+| Worst-case body | Ganymede (0.290%) |
+| Planet error range | 0.0003% – 0.173% |
+| Energy conservation ΔE/E | 7.4 × 10⁻¹¹% |
+| Wall-clock runtime | 56.5 s (single core) |
 
-**Error by body class:**
+**249-year simulation (1950–2199):**
 
-- **Gas giants** (Jupiter, Saturn, Uranus, Neptune): < 0.002% — essentially exact
-- **Inner planets** (Venus, Earth, Mars): < 0.03%
-- **Mercury**: 0.10% — highest planet error due to missing solar oblateness (J₂) and asteroid perturbations
-- **Moons** (Io, Europa, Ganymede, etc.): 0.02% – 0.29% — phase drift from fast orbital periods relative to timestep
+| Metric | Value |
+|---|---|
+| Mean max relative error | 0.115% |
+| Worst-case planet | Mercury (0.417%) |
+| Energy conservation ΔE/E | 1.0 × 10⁻¹⁰% |
+| Wall-clock runtime | 171.6 s |
 
-Residual errors are from physics model differences (Newtonian + 10 bodies vs. JPL DE441's ~300 bodies with full PPN relativity, solar oblateness, and tidal effects), not integration error.
+Residual errors are attributed to physics model differences (Newtonian gravity with 35 bodies vs. JPL DE441's ~300 bodies with post-Newtonian relativity, solar oblateness J₂, asteroid perturbations, and tidal effects), not numerical integration error. This is confirmed by the fact that reducing Δt by 10× improves energy conservation by ~460× while positional errors remain unchanged — they have converged to the physics model floor.
+
+---
 
 ## Features
 
-- **Yoshida 4th-order symplectic integrator** with Velocity Verlet alternative
-- **Automated JPL Horizons validation pipeline** — fetches reference ephemerides and compares against simulation output
-- **35 solar system bodies** with JPL-sourced initial conditions (10 planets, 25 moons)
-- **OpenMP parallelization** with SIMD vectorization
+- **Yoshida 4th-order symplectic integrator** — O(Δt⁴) accuracy with only 3 force evaluations per step; bounded oscillatory energy error with no secular drift
+- **Velocity Verlet** alternative (2nd-order) for comparison
+- **Automated JPL Horizons validation pipeline** — fetches reference ephemerides and compares against simulation output at epoch-aligned intervals
+- **35 solar system bodies** with JPL-sourced initial conditions (auto-generated `Body.hpp`)
+- **Structure-of-Arrays (SoA) memory layout** with `__restrict__` annotations for cache performance and SIMD auto-vectorization
+- **OpenMP parallelization** — automatically enabled for N ≥ 500; ~6× speedup on 6 cores at N = 10,000
+- **Branchless force computation** — floating-point mask eliminates conditional branches in the SIMD-vectorized inner loop
+- **Single-file configuration** — change `dt`, `num_years`, or `output_hours` in `Config.hpp` and both the C++ simulator and Python tools adapt automatically (with compile-time validation)
 - **Interactive 3D visualization** via matplotlib
-- **Single-file configuration** — change `dt`, `num_years`, or `output_hours` in `Config.hpp` and both the C++ simulator and Python validation tools adapt automatically
 
-## Project Structure
-
-```
-├── main.cpp                    # Entry point
-├── Config.hpp                  # Single-source configuration (dt, years, output interval)
-├── Body.hpp                    # JPL Horizons initial conditions (auto-generated)
-├── Output.hpp                  # CSV output handler
-├── jpl_compare.py              # JPL fetch + validation (reads Config.hpp)
-├── visualize.py                # Interactive 3D orbit viewer
-├── Classes/
-│   ├── Force/                  # Gravitational force computation
-│   ├── Integrator/             # Yoshida 4th-order, Velocity Verlet
-│   ├── Particle/               # SoA particle data structure
-│   └── Simulation/             # Main simulation loop, energy diagnostics
-└── validation/                 # Output directory for sim + reference data
-    ├── sim_output.csv
-    ├── jpl_reference.csv
-    └── body_catalog.json
-```
+---
 
 ## Quick Start
 
 ### Prerequisites
 
 - C++17 compiler (GCC / Clang / MSVC)
+- CMake 3.16+
+- OpenMP
 - Python 3.8+ with `numpy` and `matplotlib`
-- Internet connection (for JPL Horizons fetch)
+- Internet connection (for JPL Horizons API)
 
 ### Build & Run
 
 ```bash
-# 1. Fetch JPL reference data (reads Config.hpp for step size and duration)
-python jpl_compare.py fetch --moons
+# 1. Fetch JPL reference data and generate Body.hpp
+python src/jpl_compare.py fetch --moons
 
-# 2. Compile
-g++ -std=c++17 -O3 -march=native -fopenmp *.cpp Classes/Force/*.cpp Classes/Integrator/*.cpp Classes/Particle/*.cpp Classes/Simulation/*.cpp -o main.exe
+# 2. Build
+cmake -B build
+cmake --build build
 
 # 3. Run simulation
-./main.exe
+./build/main
 
-# 4. Validate against JPL
-python jpl_compare.py compare
+# 4. Validate against JPL Horizons
+python src/jpl_compare.py compare
 
 # 5. Visualize
-python visualize.py
+python src/visualize.py
 ```
+
+---
 
 ## Configuration
 
-All simulation parameters are controlled from `Config.hpp`:
+All simulation parameters live in `src/Config.hpp`:
 
 ```cpp
-inline static constexpr double dt{ 3600.0 };              // Integration timestep (seconds)
-inline static constexpr std::size_t num_years{ 100 };     // Simulation duration
+inline static constexpr double dt{ 360.0 };               // Integration timestep (seconds)
+inline static constexpr std::size_t num_years{ 249 };     // Simulation duration
 inline static constexpr std::size_t output_hours{ 487 };  // Output interval (hours)
 ```
 
-The Python scripts read `num_years` and `output_hours` directly from this file, so there's a single source of truth. A compile-time `static_assert` catches invalid `dt` / `output_hours` combinations.
+The Python scripts read `num_years` and `output_hours` directly from this file, so there is a single source of truth. A `static_assert` enforces that `output_hours × 3600` is divisible by `dt`.
 
-`output_hours` must satisfy: `(output_hours × 3600) % dt == 0`, and JPL Horizons must accept it as an integer hour step.
+---
+
+## Project Structure
+
+```
+├── src/
+│   ├── main.cpp                # Entry point
+│   ├── Config.hpp              # Single-source configuration (dt, duration, output interval)
+│   ├── Body.hpp                # JPL Horizons initial conditions (auto-generated by jpl_compare.py)
+│   ├── Output.hpp              # CSV output handler
+│   ├── Force/
+│   │   ├── Force.hpp           # Abstract force interface
+│   │   └── Force.cpp           # Newtonian gravity (O(N²) pairwise, SIMD, branchless)
+│   ├── Integrator/
+│   │   ├── Integrator.hpp      # Abstract integrator interface
+│   │   └── Integrator.cpp      # Yoshida 4th-order, Velocity Verlet
+│   ├── Particle/
+│   │   ├── Particle.hpp        # SoA particle data structure
+│   │   └── Particle.cpp        # Heap-allocated contiguous arrays
+│   ├── Simulation/
+│   │   ├── Simulation.hpp      # Simulation orchestration
+│   │   └── Simulation.cpp      # Time-stepping loop, energy diagnostics
+│   ├── validation/             # Output directory (gitignored)
+│   │   ├── sim_output.csv
+│   │   └── jpl_reference.csv
+│   ├── jpl_compare.py          # JPL fetch + validation pipeline
+│   └── visualize.py            # Interactive 3D orbit viewer
+├── docs/
+│   └── N_Body_Technical_Paper.pdf
+└── CMakeLists.txt
+```
+
+---
 
 ## How It Works
 
-### Integration
+### Yoshida 4th-Order Symplectic Integrator
 
-The simulator uses the **Yoshida 4th-order symplectic integrator**, which splits each timestep into a sequence of position and momentum sub-steps with specially chosen coefficients. This preserves the symplectic structure of Hamilton's equations, guaranteeing bounded energy error over arbitrarily long integrations — unlike Runge-Kutta methods which exhibit secular energy drift.
+The integrator composes three leapfrog sub-steps with coefficients chosen to cancel lower-order error terms, achieving O(Δt⁴) local truncation error. Each timestep consists of four position drifts interleaved with three force evaluations (kicks). The negative intermediate coefficient introduces a backward sub-step — counterintuitive, but essential for the error cancellation that yields 4th-order accuracy.
 
-The 4th-order scheme achieves O(dt⁴) local truncation error with only 3 force evaluations per step, compared to 4 for classical RK4.
+Because the method is symplectic, it exactly preserves a nearby shadow Hamiltonian, guaranteeing that energy errors remain bounded and oscillatory over arbitrarily long integrations. This is what makes multi-century simulations feasible.
 
 ### Force Computation
 
-Pairwise Newtonian gravity with O(N²) direct summation. The inner loop uses a branchless mask (`i == j ? 0 : 1`) to skip self-interaction without breaking SIMD vectorization. For N > 500 bodies, OpenMP parallelization activates automatically.
+Pairwise Newtonian gravity via O(N²) direct summation. Self-interaction is eliminated with a branchless floating-point mask (`i == j ? 0.0 : 1.0`) rather than a conditional branch, preserving SIMD vectorization of the inner loop. Newton's third law symmetry is intentionally not exploited — the doubled FLOP count is traded for regular memory access patterns and freedom from race conditions under thread parallelism.
 
 ### Validation Pipeline
 
-`jpl_compare.py` automates the full validation workflow:
-
-1. **Fetch**: Queries NASA JPL Horizons API for state vectors of all 35 bodies at intervals matching the simulation output
-2. **Compare**: Loads both datasets, computes position errors at each epoch, and reports max relative error per body
-
-The comparison uses index-aligned matching — both the simulation and JPL reference output at exactly the same time intervals (`output_hours` hours), eliminating interpolation error.
+`jpl_compare.py` automates the full validation workflow: it queries the JPL Horizons API for state vectors of all 35 bodies at intervals matching the simulation output, then computes per-body position errors at each epoch. Both the simulator and the reference fetch read the same `Config.hpp`, so the comparison is epoch-aligned with no interpolation artifacts.
 
 ### Visualization
 
-`visualize.py` opens an interactive matplotlib 3D window with:
+`visualize.py` provides an interactive 3D matplotlib viewer with keyboard controls: Space (play/pause), arrow keys (step/speed), T (toggle trails), R (reset), Q (quit).
 
-- Keyboard controls (Space = play/pause, arrows = step/speed, T = trails, R = reset)
-- Colored trails with planet labels
-- Automatic axis scaling from trajectory data
+---
 
-## Technical Notes
+## Error Attribution
 
-**Why 0.05% and not 0.00%?** The simulator solves Newtonian gravity for 35 bodies. JPL DE441 integrates ~300 bodies with full post-Newtonian relativity (PPN), solar oblateness (J₂), asteroid perturbations (Ceres, Pallas, Vesta), and tidal effects. The 0.05% residual is the gap between these two physics models, not integration error — as confirmed by the 8.8 × 10⁻¹¹% energy drift.
+The error hierarchy matches the expected importance of missing physics:
 
-**Why not include relativistic corrections?** The EIH (Einstein-Infeld-Hoffmann) 1PN equations were implemented and tested. However, the velocity-dependent PN forces break the symplecticity of the Yoshida integrator, degrading energy conservation by 4 orders of magnitude (from 10⁻¹¹% to 10⁻⁷%). Over 100 years, this symplectic violation costs more accuracy than the 43 arcsec/century of Mercury precession it's intended to capture. A proper fix requires an implicit or splitting integrator for velocity-dependent potentials.
+- **Outer planets** (Saturn, Uranus, Neptune): < 0.001% — dominated by solar gravity, minimal missing effects
+- **Inner planets** (Venus, Earth, Mars): < 0.06% — small contributions from missing asteroids and J₂
+- **Mercury**: 0.17% (100 yr), 0.42% (249 yr) — general relativistic precession of ~43 arcsec/century is the dominant unmodeled effect
+- **Galilean moons**: 0.11%–0.29% — phase drift from fast orbital periods (Io completes ~20,600 orbits in 100 years)
+- **Sun**: 1.34% at 249 yr — coordinate artifact in the barycentric frame, not a simulation failure (the Sun's barycentric displacement is only ~10⁶ km vs. ~10⁹ km for outer planets)
 
-**Moon errors are phase drift, not integration failure.** Io orbits Jupiter every 1.77 days. With dt = 360s, that's ~425 steps per orbit — adequate for 4th-order accuracy per orbit, but phase errors accumulate over ~20,000 orbits in 100 years. Reducing dt to 60–120s or implementing adaptive timestepping would improve moon accuracy at the cost of runtime.
+Post-Newtonian (EIH) corrections were implemented and tested, but the velocity-dependent potential breaks the separability required by the Yoshida integrator, degrading energy conservation by ~4 orders of magnitude. A proper fix requires implicit or mixed-variable symplectic methods.
+
+---
+
+## License
+
+MIT
