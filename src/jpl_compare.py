@@ -138,7 +138,7 @@ def cmd_fetch(args):
     # Ensure validation directory exists
     Path("src/validation").mkdir(exist_ok=True)
 
-    with open("Body.hpp", "w") as f:
+    with open("src/Body.hpp", "w") as f:
         f.write('#pragma once\n#include "Particle/Particle.hpp"\n#include "Config.hpp"\n\n')
         f.write("struct Body {\n    const char* name;\n    double mass;\n")
         f.write("    double x, y, z;\n    double v_x, v_y, v_z;\n};\n\n")
