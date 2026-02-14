@@ -1,5 +1,4 @@
-
-import csv, re, argparse
+import struct, re, argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -7,7 +6,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 # Usage: python visualize.py
-#        python visualize.py --sim validation/sim_output.csv --speed 2
+#        python visualize.py --sim validation/sim_output.bin --speed 2
 
 #   Space  = play / pause
 #   Right  = step forward
@@ -38,20 +37,40 @@ MARKER_SIZES = {
 
 
 def load(path):
-    from collections import defaultdict
-    raw = defaultdict(lambda: {"x": [], "y": [], "z": []})
-    order = []
-    with open(path) as f:
-        for row in csv.DictReader(f):
-            name = row["name"]
-            if name not in raw:
-                order.append(name)
-            raw[name]["x"].append(float(row["x_m"]) / AU)
-            raw[name]["y"].append(float(row["y_m"]) / AU)
-            raw[name]["z"].append(float(row["z_m"]) / AU)
     data = OrderedDict()
-    for n in order:
-        data[n] = {k: np.array(v) for k, v in raw[n].items()}
+    with open(path, "rb") as f:
+        # Read header
+        num_bodies = struct.unpack("Q", f.read(8))[0]
+        names = []
+        for _ in range(num_bodies):
+            raw = f.read(32)
+            names.append(raw.split(b'\x00')[0].decode())
+
+        # Initialize storage
+        for name in names:
+            data[name] = {"x": [], "y": [], "z": []}
+
+        # Read frames
+        doubles_per_frame = 2 + num_bodies * 6
+        frame_size = doubles_per_frame * 8
+
+        while True:
+            raw = f.read(frame_size)
+            if len(raw) < frame_size:
+                break
+
+            frame = np.frombuffer(raw, dtype=np.float64)
+            states = frame[2:].reshape(num_bodies, 6)
+
+            for i, name in enumerate(names):
+                data[name]["x"].append(states[i, 0] / AU)
+                data[name]["y"].append(states[i, 1] / AU)
+                data[name]["z"].append(states[i, 2] / AU)
+
+    # Convert lists to numpy arrays
+    for name in data:
+        data[name] = {k: np.array(v) for k, v in data[name].items()}
+
     return data
 
 
@@ -66,7 +85,7 @@ def read_config(path="src/Config.hpp"):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--sim", default="src/validation/sim_output.csv")
+    p.add_argument("--sim", default="src/validation/sim_output.bin")
     p.add_argument("--speed", type=float, default=1.0)
     args = p.parse_args()
 

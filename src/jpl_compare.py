@@ -1,4 +1,4 @@
-import argparse, csv, json, re, sys, time, urllib.request, urllib.parse
+import argparse, csv, json, re, struct, sys, time, urllib.request, urllib.parse
 import numpy as np
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -16,7 +16,6 @@ SEC_PER_YR = 365.25 * 86400.0
 G_KM3 = 6.6743e-20
 
 def read_config(path="src/Config.hpp"):
-    """Read output_hours and num_years from Config.hpp"""
     text = Path(path).read_text()
     cfg = {}
     for name in ["output_hours", "num_years"]:
@@ -177,6 +176,40 @@ def cmd_fetch(args):
     Path("src/validation/body_catalog.json").write_text(json.dumps(cat, indent=2))
     print(f"-> src/validation/body_catalog.json")
 
+# Binary loader:
+
+def load_sim_binary(path):
+    data = defaultdict(lambda: {"t": [], "pos": [], "vel": []})
+    with open(path, "rb") as f:
+        # Read header
+        num_bodies = struct.unpack("Q", f.read(8))[0]
+        names = []
+        for _ in range(num_bodies):
+            raw = f.read(32)
+            names.append(raw.split(b'\x00')[0].decode())
+
+        # Read frames
+        doubles_per_frame = 2 + num_bodies * 6
+        frame_size = doubles_per_frame * 8
+
+        while True:
+            raw = f.read(frame_size)
+            if len(raw) < frame_size:
+                break
+
+            frame = np.frombuffer(raw, dtype=np.float64)
+
+            step = struct.unpack("Q", struct.pack("d", frame[0]))[0]
+            time_s = frame[1]
+
+            states = frame[2:].reshape(num_bodies, 6)
+            for i, name in enumerate(names):
+                data[name]["t"].append(time_s)
+                data[name]["pos"].append(states[i, 0:3] / 1e3)
+                data[name]["vel"].append(states[i, 3:6] / 1e3)
+
+    return {n: {k: np.array(v) for k, v in d.items()} for n, d in data.items()}
+
 # Compare:
 
 def load_ref(path):
@@ -189,19 +222,9 @@ def load_ref(path):
             data[n]["vel"].append([float(row["vx_kms"]),float(row["vy_kms"]),float(row["vz_kms"])])
     return {n: {k: np.array(v) for k,v in d.items()} for n,d in data.items()}
 
-def load_sim(path):
-    data = defaultdict(lambda: {"t":[],"pos":[],"vel":[]})
-    with open(path) as f:
-        for row in csv.DictReader(f):
-            n = row["name"]
-            data[n]["t"].append(float(row["time_s"]))
-            data[n]["pos"].append([float(row[k])/1e3 for k in ["x_m","y_m","z_m"]])
-            data[n]["vel"].append([float(row[k])/1e3 for k in ["vx_ms","vy_ms","vz_ms"]])
-    return {n: {k: np.array(v) for k,v in d.items()} for n,d in data.items()}
-
 def cmd_compare(args):
     ref = load_ref(args.ref)
-    sim = load_sim(args.sim)
+    sim = load_sim_binary(args.sim)
     shared = sorted(set(sim) & set(ref))
     if args.bodies:
         shared = [b for b in args.bodies.split(",") if b in shared]
@@ -242,7 +265,7 @@ def main():
     f.add_argument("--moons", action="store_true")
 
     c = sub.add_parser("compare")
-    c.add_argument("--sim", default="src/validation/sim_output.csv")
+    c.add_argument("--sim", default="src/validation/sim_output.bin")
     c.add_argument("--ref", default="src/validation/jpl_reference.csv")
     c.add_argument("--bodies", default=None)
 

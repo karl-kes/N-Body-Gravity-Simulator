@@ -14,8 +14,8 @@ void Simulation::run() {
     double max_energy{ initial_energy };
     double min_energy{ initial_energy };
 
-    CSV_Output csv{ "src/validation/sim_output.csv" };
-    csv.write( particles(), bodies, num_bodies(), 0, 0.0 );
+    Binary_Output bin{ "src/validation/sim_output.bin", bodies, num_bodies() };
+    bin.write( particles(), num_bodies(), 0, 0.0 );
 
     auto const start_time{ std::chrono::high_resolution_clock::now() };
 
@@ -30,7 +30,7 @@ void Simulation::run() {
         }
 
         if ( curr_step % output_interval() == 0 ) {
-            csv.write( particles(), bodies, num_bodies(), curr_step, curr_step * config::dt );
+            bin.write( particles(), num_bodies(), curr_step, curr_step * config::dt );
         }
     }
     std::cout << "\rProgress: 100%" << std::flush;
