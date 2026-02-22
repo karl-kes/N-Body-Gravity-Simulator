@@ -2,7 +2,7 @@
 
 A high-performance N-body gravitational simulator for solar system dynamics, written in C++17. Integrates 35 bodies (the Sun, 8 planets, Pluto, and 25 natural satellites) over multi-century timescales using a 4th-order Yoshida symplectic integrator, validated against NASA JPL Horizons DE441 ephemeris data.
 
-📄 **[Technical Paper](docs/N_Body_Technical_Paper.pdf)** — Full derivations, validation methodology, and error analysis.
+**[Technical Paper](docs/N_Body_Technical_Paper.pdf)** — Full derivations, validation methodology, and error analysis.
 
 ---
 
