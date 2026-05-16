@@ -21,7 +21,9 @@ param(
     [switch]$NoMoons,
     [switch]$SkipFetch,
     [switch]$Visualize,
-    [switch]$Render
+    [switch]$Render,
+    [string]$Force = "direct",
+    [double]$Theta = 0.5
 )
 
 $ErrorActionPreference = "Stop"
@@ -75,7 +77,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Build failed"; exit 1 }
 Write-Host ""
 Write-Host "Running simulation..."
 
-./build/main.exe
+./build/main.exe --force $Force --theta $Theta
 if ($LASTEXITCODE -ne 0) { Write-Error "Simulation failed"; exit 1 }
 
 # Validate:

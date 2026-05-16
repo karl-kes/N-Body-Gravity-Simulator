@@ -89,7 +89,7 @@ void Gravity_BarnesHut::build_recursive(
         } else {
             n.com_x = bcx; n.com_y = bcy; n.com_z = bcz;
         }
-        n.children[0] = -1;
+        n.children[0] = -2;
         n.children[1] = begin;
         n.children[2] = count;
         return;
@@ -189,7 +189,7 @@ void Gravity_BarnesHut::traverse_for_particle(
         int const node_id{ stack[--sp] };
         BHNode const &n{ nodes_[node_id] };
 
-        if ( n.children[0] == -1 ) {
+        if ( n.children[0] == -2 ) {
             // Leaf bucket: sum each particle, masking the self-term.
             int const first{ n.children[1] };
             int const cnt{ n.children[2] };
@@ -206,13 +206,11 @@ void Gravity_BarnesHut::traverse_for_particle(
             continue;
         }
 
-        // MAC: open if (2 * half_width)^2 >= theta^2 * d^2, else approximate.
         double const dx{ n.com_x - pxi };
         double const dy{ n.com_y - pyi };
         double const dz{ n.com_z - pzi };
         double const d_sq{ dx*dx + dy*dy + dz*dz };
         double const s{ 2.0 * n.half_width };
-
         if ( s * s < theta_sq * d_sq ) {
             Gravity::accumulate_pairwise(
                 pxi, pyi, pzi,

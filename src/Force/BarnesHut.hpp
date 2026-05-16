@@ -7,9 +7,11 @@
 
 // One node of the Barnes-Hut octree.
 // Internal nodes: children[k] is a node index for octant k, or -1 if empty.
-// Leaf nodes:     children[0] = -1 (sentinel), children[1] = first index into
+// Leaf nodes:     children[0] = -2 (sentinel), children[1] = first index into
 //                 indices_, children[2] = bucket count.
-// Disambiguation: a node is a leaf iff children[0] == -1.
+// Disambiguation: a node is a leaf iff children[0] == -2.
+// (-2 is distinct from the "empty child" sentinel -1; using -1 for both
+//  would cause internal nodes with empty octant 0 to be misread as leaves.)
 struct BHNode {
     double com_x, com_y, com_z;
     double total_mass;

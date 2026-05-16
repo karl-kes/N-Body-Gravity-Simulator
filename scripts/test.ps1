@@ -8,15 +8,15 @@
     .\test.ps1                          # build and run unit tests
     .\test.ps1 -Benchmark               # also run the scaling benchmark
     .\test.ps1 -BenchOnly               # skip tests, run benchmark only
-    .\test.ps1 -Benchmark -Steps 200    # pass --steps to benchmark
+    .\test.ps1 -Benchmark -Trials 5     # pass --trials to benchmark
     .\test.ps1 -Benchmark -MaxN 8192    # pass --max-n to benchmark
 #>
 
 param(
     [switch]$Benchmark,
     [switch]$BenchOnly,
-    [int]$Steps = 100,
-    [int]$MaxN = 4096
+    [int]$Trials = 3,
+    [int]$MaxN = 65536
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,7 +48,7 @@ if ($RunTests) {
 # Run benchmark
 if ($RunBench) {
     Write-Host ""
-    $BenchArgs = @("--steps", $Steps, "--max-n", $MaxN)
+    $BenchArgs = @("--trials", $Trials, "--max-n", $MaxN)
     ./build/benchmark.exe @BenchArgs
     if ($LASTEXITCODE -ne 0) { Write-Error "Benchmark failed"; exit 1 }
 }

@@ -1,16 +1,13 @@
 // Integration-step scaling benchmark: serial vs OpenMP across a range of N.
 // Times full Yoshida integration steps (3 force evaluations + drift/kick
-// updates). By default sweeps both the direct O(N^2) kernel and Barnes-Hut
-// O(N log N) so the crossover is visible in a single run; direct is gated
-// off above --include-direct-above (default 16384) to keep large-N runs
-// tractable.
+// updates). Sweeps both the direct O(N^2) kernel and Barnes-Hut O(N log N)
+// so the crossover is visible in a single run.
 //
 // Build:  cmake --build build --target benchmark
 // Run:    ./build/benchmark
 //         ./build/benchmark --max-n 65536 --trials 5
 //         ./build/benchmark --force bh --theta 0.3
 //         ./build/benchmark --force direct
-//         ./build/benchmark --include-direct-above 32768
 
 #include "../src/Particle/Particle.hpp"
 #include "../src/Force/Force.hpp"
@@ -27,6 +24,7 @@
 #include <random>
 #include <string>
 #include <algorithm>
+#include <sstream>
 
 #include <omp.h>
 
@@ -173,13 +171,11 @@ static std::size_t calibrate_steps( std::size_t const N, double const target_ms,
 }
 
 int main( int argc, char* argv[] ) {
-    std::size_t max_n{ 8192 };
+    std::size_t max_n{ 65536 };
     std::size_t num_trials{ 3 };
     double target_ms{ 2000.0 };
     double theta{ 0.5 };
     std::string mode{ "both" };
-    std::size_t include_direct_above{ 16384 };
-
     int const max_threads{ omp_get_max_threads() };
     int omp_threads{ max_threads };
 
@@ -191,20 +187,15 @@ int main( int argc, char* argv[] ) {
         else if ( arg == "--threads" && i + 1 < argc ) { omp_threads = std::stoi( argv[++i] ); }
         else if ( arg == "--theta" && i + 1 < argc ) { theta = std::stod( argv[++i] ); }
         else if ( arg == "--force" && i + 1 < argc ) { mode = argv[++i]; }
-        else if ( arg == "--include-direct-above" && i + 1 < argc ) {
-            include_direct_above = std::stoull( argv[++i] );
-        }
         else if ( arg == "-h" || arg == "--help" ) {
             std::cout << "Usage: benchmark [--max-n N] [--trials N] [--target-ms MS]\n"
-                      << "                 [--threads N] [--force {direct|bh|both}]\n"
-                      << "                 [--theta T] [--include-direct-above N]\n"
-                      << "  --max-n N               Maximum N for sweep (default: 8192)\n"
+                      << "                 [--threads N] [--force {direct|bh|both}] [--theta T]\n"
+                      << "  --max-n N               Maximum N for sweep (default: 65536)\n"
                       << "  --trials N              Trials per config, reports median (default: 3)\n"
                       << "  --target-ms MS          Target serial runtime per trial in ms (default: 2000)\n"
                       << "  --threads N             OMP thread count for parallel runs (default: max)\n"
                       << "  --force MODE            'direct', 'bh', or 'both' (default: both)\n"
-                      << "  --theta T               BH opening angle (default: 0.5)\n"
-                      << "  --include-direct-above N  Skip direct above this N in 'both' mode (default: 16384)\n";
+                      << "  --theta T               BH opening angle (default: 0.5)\n";
             return 0;
         }
     }
@@ -222,9 +213,6 @@ int main( int argc, char* argv[] ) {
               << "  Trials/config:     " << num_trials << " (median)\n"
               << "  Target serial:     " << std::fixed << std::setprecision( 0 ) << target_ms << " ms per trial\n"
               << "  OMP threshold:     N >= " << config::OMP_THRESHOLD << "\n";
-    if ( mode == "both" ) {
-        std::cout << "  Skip direct above: N > " << include_direct_above << "\n";
-    }
     std::cout << "\n";
 
     // Start at OMP_THRESHOLD (rounded up to next power of 2) so the parallel
@@ -247,18 +235,15 @@ int main( int argc, char* argv[] ) {
               << std::setw( 14 ) << "BH(ms)"
               << std::setw( 14 ) << "BH-OMP(ms)"
               << std::setw( 11 ) << "BH-Spd"
-              << std::setw( 11 ) << "BH/Direct"
+              << std::setw( 13 ) << "Winner(OMP)"
               << "\n";
-    std::cout << std::string( 105, '=' ) << "\n";
+    std::cout << std::string( 107, '=' ) << "\n";
 
     for ( std::size_t const N : N_values ) {
-        bool const run_direct{ ( mode == "direct" || mode == "both" )
-                               && ( mode != "both" || N <= include_direct_above ) };
+        bool const run_direct{ mode == "direct" || mode == "both" };
         bool const run_bh{ mode == "bh" || mode == "both" };
 
-        // Calibrate using whichever kernel will actually run; prefer direct
-        // (its cost model is well-defined) if it's in scope.
-        ForceKind const calib_kind{ run_direct ? ForceKind::Direct : ForceKind::BarnesHut };
+        ForceKind const calib_kind{ run_bh ? ForceKind::BarnesHut : ForceKind::Direct };
         std::size_t const steps{ calibrate_steps( N, target_ms, calib_kind, theta ) };
 
         BenchResult r{};
@@ -287,10 +272,17 @@ int main( int argc, char* argv[] ) {
         }
 
         if ( run_direct && run_bh ) {
-            r.bh_over_direct_omp = r.bh_omp_ms / r.direct_omp_ms;
+            // > 1: BH wins; < 1: Direct wins.
+            r.bh_over_direct_omp = r.direct_omp_ms / r.bh_omp_ms;
         }
 
         results.push_back( r );
+
+        auto fmt_speedup = []( double spd ) -> std::string {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision( 2 ) << spd << "x";
+            return oss.str();
+        };
 
         std::cout << std::left << std::fixed
                   << std::setw( 8 ) << N
@@ -298,7 +290,7 @@ int main( int argc, char* argv[] ) {
         if ( run_direct ) {
             std::cout << std::setw( 14 ) << std::setprecision( 1 ) << r.direct_serial_ms
                       << std::setw( 14 ) << std::setprecision( 1 ) << r.direct_omp_ms
-                      << std::setw( 11 ) << std::setprecision( 2 ) << r.direct_speedup;
+                      << std::setw( 11 ) << fmt_speedup( r.direct_speedup );
         } else {
             std::cout << std::setw( 14 ) << "--"
                       << std::setw( 14 ) << "--"
@@ -307,21 +299,27 @@ int main( int argc, char* argv[] ) {
         if ( run_bh ) {
             std::cout << std::setw( 14 ) << std::setprecision( 1 ) << r.bh_serial_ms
                       << std::setw( 14 ) << std::setprecision( 1 ) << r.bh_omp_ms
-                      << std::setw( 11 ) << std::setprecision( 2 ) << r.bh_speedup;
+                      << std::setw( 11 ) << fmt_speedup( r.bh_speedup );
         } else {
             std::cout << std::setw( 14 ) << "--"
                       << std::setw( 14 ) << "--"
                       << std::setw( 11 ) << "--";
         }
         if ( run_direct && run_bh ) {
-            std::cout << std::setw( 11 ) << std::setprecision( 3 ) << r.bh_over_direct_omp;
+            std::ostringstream winner;
+            if ( r.bh_over_direct_omp >= 1.0 ) {
+                winner << "BH " << std::fixed << std::setprecision( 2 ) << r.bh_over_direct_omp << "x";
+            } else {
+                winner << "Dir " << std::fixed << std::setprecision( 2 ) << ( 1.0 / r.bh_over_direct_omp ) << "x";
+            }
+            std::cout << std::setw( 13 ) << winner.str();
         } else {
-            std::cout << std::setw( 11 ) << "--";
+            std::cout << std::setw( 13 ) << "--";
         }
         std::cout << "\n" << std::flush;
     }
 
-    std::cout << std::string( 105, '=' ) << "\n\n";
+    std::cout << std::string( 107, '=' ) << "\n\n";
 
     omp_set_num_threads( max_threads );
 
