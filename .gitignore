@@ -5,3 +5,4 @@ build/
 tests/*.json
 tests/*.csv
 tests/*.bin
+tests/*.png

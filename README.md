@@ -1,18 +1,173 @@
 # N-Body Gravity Engine
 
-A high-performance N-body gravitational simulator for solar system dynamics, written in C++23. Integrates 35 bodies (the Sun, 8 planets, Pluto, and 25 natural satellites) over multi-century timescales using a 4th-order Yoshida symplectic integrator. Validated against NASA JPL Horizons DE441 ephemeris data. Two force kernels are available: a SIMD-vectorized direct O(N²) sum for small-N production runs, and a Barnes-Hut O(N log N) octree for larger ensembles.
+A high-performance N-body gravitational simulator in C++, with two physical scenarios:
 
-## Technical Paper
+- **Solar system**: 35 bodies (Sun, 8 planets, Pluto, 25 natural satellites) over multi-century timescales, validated against NASA JPL Horizons DE441 ephemeris data.
+- **Galaxy collision**: MW-Andromeda encounter, two Plummer galaxies (configurable N), validated against van der Marel et al. 2012 predicted timeline.
 
-**[N_Body_Technical_Paper.pdf](docs/N_Body_Technical_Paper.pdf)** is the canonical reference for this engine. It covers the symplectic integrator derivation, the softened Newtonian force model, the validation methodology against JPL Horizons DE441, the timestep convergence study that places Δt ≤ 900 s on the floating-point precision floor, and the residual error attribution. Read the paper before drawing scientific conclusions from the code; the README is a quick-start, the paper is the specification.
+Both scenarios use a 4th-order Yoshida symplectic integrator and choose between a SIMD-vectorized direct O($N^2$) kernel or a Barnes-Hut O($N \log N$) octree kernel.
+
+**[Technical Paper](docs/N_Body_Technical_Paper.pdf)** covers the symplectic integrator derivation, force model, validation methodology, and error analysis.
+
+---
+
+## Quick Start
+
+```bash
+# Solar system, full pipeline:
+./scripts/run.sh --fetch --visualize
+
+# Galaxy collision, Barnes-Hut, full pipeline:
+./scripts/run.sh --galaxy --force bh --visualize
+
+# Tests:
+./scripts/test.sh
+```
+
+On Windows replace `./scripts/run.sh` with `.\scripts\run.ps1` and `--flags` with `-Flags` (`-Fetch`, `-Galaxy`, etc).
+
+---
+
+## Scripts
+
+Two scripts handle everything. Both have Linux/macOS (`.sh`) and Windows (`.ps1`) versions with identical behavior and naming.
+
+### `scripts/run.sh` / `scripts/run.ps1`
+
+Full simulation pipeline: stage the initial conditions, build the code, run the simulation, validate against reference data (solar only), open viewers (optional).
+
+| Flag (bash) | Flag (PowerShell) | Default | Description |
+|---|---|---|---|
+| `--fetch` | `-Fetch` | (off) | Fetch solar system IC from JPL Horizons before running |
+| `--galaxy` | `-Galaxy` | (off) | Generate MW-Andromeda IC before running |
+| `--n N` | `-N N` | `25000` | Particles per galaxy (galaxy only) |
+| `--start DATE` | `-Start DATE` | `1950-01-01` | Solar fetch start date |
+| `--no-moons` | `-NoMoons` | (off) | Solar: planets only, no moons (10 bodies instead of 35) |
+| `--force MODE` | `-Force MODE` | `direct` | Force kernel: `direct` or `bh` |
+| `--theta T` | `-Theta T` | `0.5` | Barnes-Hut opening angle (only used with `--force bh`) |
+| `--visualize` | `-Visualize` | (off) | Open matplotlib viewer after the simulation completes |
+| `--render` | `-Render` | (off) | Open Rerun viewer after the simulation completes |
+
+**Scenario selection.** `--fetch` and `--galaxy` are mutually exclusive. If you pass neither, the script uses whatever IC is already in `tests/sim_ic.bin` (from a previous run).
+
+**Common usage:**
+
+```bash
+# Solar, default everything (uses existing IC if present):
+./scripts/run.sh
+
+# Solar, refetch JPL data first:
+./scripts/run.sh --fetch
+
+# Solar, planets only, Barnes-Hut, both viewers:
+./scripts/run.sh --fetch --no-moons --force bh --visualize --render
+
+# Galaxy, 50k particles per galaxy, Barnes-Hut, matplotlib viewer:
+./scripts/run.sh --galaxy --n 50000 --force bh --visualize
+
+# Galaxy, Rerun viewer with separation timeline:
+./scripts/run.sh --galaxy --force bh --render
+```
+
+### `scripts/test.sh` / `scripts/test.ps1`
+
+Build and run the test suite and/or the scaling benchmark.
+
+| Flag (bash) | Flag (PowerShell) | Default | Description |
+|---|---|---|---|
+| `--benchmark` | `-Benchmark` | (off) | Run the scaling benchmark after unit tests |
+| `--bench-only` | `-BenchOnly` | (off) | Skip unit tests, run benchmark only |
+| `--trials N` | `-Trials N` | `3` | Trials per N value in the benchmark |
+| `--max-n N` | `-MaxN N` | `65536` | Maximum N for benchmark sweep |
+
+**Common usage:**
+
+```bash
+./scripts/test.sh                                       # run all unit tests
+./scripts/test.sh --benchmark                           # tests, then scaling benchmark
+./scripts/test.sh --bench-only --trials 5 --max-n 16384 # benchmark only
+```
+
+---
+
+## Prerequisites
+
+- C++23 compiler (GCC / Clang / MSVC / MinGW)
+- CMake 3.25+
+- OpenMP
+- Python 3.8+ with `numpy` and `matplotlib`
+- Internet connection for `--fetch` (JPL Horizons API)
+- Optional: `pip install rerun-sdk` for the Rerun viewer (`--render`)
+
+---
+
+## What the scripts call under the hood
+
+The runner scripts orchestrate Python tools, the C++ binary, and viewers. Invoke any of these directly if you want finer control.
+
+### Solar tools (`tools/solar/`)
+
+```bash
+# Fetch IC from JPL Horizons:
+python tools/solar/fetch.py                        # planets only
+python tools/solar/fetch.py --moons                # full 35 bodies
+python tools/solar/fetch.py --start 1900-01-01     # custom start date
+
+# Validate simulation against JPL reference:
+python tools/solar/compare.py                              # all bodies
+python tools/solar/compare.py --bodies Mercury,Venus,Earth # subset
+
+# Viewers:
+python tools/solar/visualize.py                    # matplotlib
+python tools/solar/visualize.py --speed 4          # start at 4x playback speed
+python tools/solar/render.py                       # Rerun
+```
+
+### Galaxy tools (`tools/galaxy/`)
+
+```bash
+# Generate MW-Andromeda IC:
+python tools/galaxy/generate.py                    # 25000 per galaxy (50k total)
+python tools/galaxy/generate.py --n 50000          # 50000 per galaxy (100k total)
+python tools/galaxy/generate.py --seed 7           # deterministic with custom seed
+
+# Validate against van der Marel 2012 predicted timeline:
+python tools/galaxy/compare.py
+
+# Viewers:
+python tools/galaxy/visualize.py                   # matplotlib
+python tools/galaxy/render.py                      # Rerun
+python tools/galaxy/render.py --save sim.rrd       # save to .rrd file for sharing
+```
+
+### Simulation binary
+
+```bash
+./build/main                                  # default: direct, theta=0.5
+./build/main --force direct
+./build/main --force bh --theta 0.5
+./build/main --force bh --theta 0.3           # tighter MAC, more accurate, slower
+./build/main --ic some_other.bin              # use a different IC file
+./build/main --out tests/run42.bin            # write output to a different path
+```
+
+Reads `tests/sim_ic.bin` by default, writes `tests/sim_output.bin` by default.
+
+### Matplotlib viewer controls
+
+| Key | Action |
+|---|---|
+| Space | Play / Pause |
+| Right / Left | Step forward / backward |
+| Up / Down | Speed up (2×) / slow down (0.5×) |
+| R | Reset to frame 0 |
+| Q | Quit |
 
 ---
 
 ## Key Results
 
-**249-year simulation (1950–2199), 35 bodies, Δt = 360 s, Yoshida 4th-order:**
-
-*Note: The shipped `Config.hpp` defaults to Δt = 900 s for convenience. The results below use Δt = 360 s, which is the production timestep used in the [technical paper](docs/N_Body_Technical_Paper.pdf). Both lie on the floating-point precision floor and produce identical positional accuracy.*
+**Solar system, 249-year simulation (1950–2199), 35 bodies, Δt = 360 s, Yoshida 4th-order:**
 
 | Metric | Value |
 |---|---|
@@ -22,188 +177,66 @@ A high-performance N-body gravitational simulator for solar system dynamics, wri
 | Energy conservation ΔE/E | 1.5 × 10⁻¹² |
 | Angular momentum ΔL/L | 4.3 × 10⁻¹³ |
 
-The Sun's maximum relative error of 1.34% is a normalization artifact from the barycentric coordinate frame; its absolute position error is only 238 km, the smallest of any body in the simulation.
-
 Residual errors are attributed to physics model differences (Newtonian gravity with 35 bodies vs. JPL DE441's ~300 bodies with post-Newtonian relativity, solar oblateness J₂, asteroid perturbations, and tidal effects), not numerical integration error. A timestep convergence study confirms that Δt ≤ 900 s lies on the floating-point precision floor.
 
----
+**Galaxy collision, 6 Gyr simulation, 50k particles, Barnes-Hut θ = 0.5:**
 
-## Quick Start
-
-### Prerequisites
-
-- C++23 compiler (GCC / Clang / MSVC)
-- CMake 3.25+
-- OpenMP
-- Python 3.8+ with `numpy` and `matplotlib`
-- Internet connection (for JPL Horizons API)
-
-### Build & Run
-
-```bash
-# 1. Fetch JPL reference data and generate initial conditions
-python src/jpl_compare.py fetch --moons
-
-# 2. Build
-cmake -B build
-cmake --build build
-
-# 3. Run simulation
-./build/main                                # default: direct O(N^2)
-./build/main --force bh --theta 0.5         # optional: Barnes-Hut O(N log N)
-
-# 4. Validate against JPL Horizons
-python src/jpl_compare.py compare
-
-# 5. Visualize
-python src/visualize.py
-```
-
-Step 1 queries the NASA JPL Horizons API for all 35 bodies, generates `src/Body.hpp` (initial conditions), and saves the reference ephemeris to `tests/`. This requires an internet connection and takes ~30 seconds.
-
-Steps 2–5 work offline.
-
-Alternatively, use the runner script which handles configuration, building, and validation in one command:
-
-```bash
-./scripts/run.sh                          # full pipeline with defaults
-./scripts/run.sh --dt 360 --years 100     # custom timestep and duration
-./scripts/run.sh --no-moons               # planets only (10 bodies)
-./scripts/run.sh --visualize              # open viewer after sim
-```
-
----
-
-## Configuration
-
-All simulation parameters live in `src/Config.hpp`:
-
-```cpp
-inline static constexpr double dt{ 900.0 };               // Integration timestep (seconds)
-inline static constexpr std::size_t num_years{ 249 };     // Simulation duration
-inline static constexpr std::size_t output_hours{ 487 };  // Output interval (hours)
-```
-
-Change these values, rebuild, and everything adapts automatically. The Python scripts read `num_years` and `output_hours` directly from this file. A `static_assert` enforces that `output_hours × 3600` is divisible by `dt`.
-
-**Important:** After changing `num_years` or `output_hours`, re-run `python src/jpl_compare.py fetch --moons` to regenerate the JPL reference data at the new cadence before validating.
-
----
-
-## Testing
-
-### Unit Tests
-
-21 tests covering integrator coefficients, force kernel correctness (direct and Barnes-Hut), Kepler orbit conservation laws, convergence order verification, Barnes-Hut accuracy at low θ, and SoA memory layout.
-
-```bash
-cmake --build build --target tests
-./build/tests
-```
-
-Or use the runner script:
-
-```bash
-./scripts/test.sh                    # build and run unit tests
-./scripts/test.sh --benchmark        # also run scaling benchmark
-./scripts/test.sh --bench-only       # benchmark only
-```
-
-### Scaling Benchmark
-
-Measures integration-step throughput (serial vs OpenMP) across a range of N values. Auto-calibrates step count per trial, runs multiple trials, and reports median wall time. By default it sweeps both force kernels side by side; direct is gated off above N = 16384 since the O(N²) cost becomes impractical.
-
-```bash
-cmake --build build --target benchmark
-./build/benchmark                                       # both kernels, θ = 0.5
-./build/benchmark --force direct                        # direct only (legacy)
-./build/benchmark --force bh --theta 0.3                # Barnes-Hut only, tighter MAC
-./build/benchmark --include-direct-above 32768          # run direct past the gate
-./build/benchmark --max-n 65536 --trials 5
-```
-
-The output table reports `Direct(ms)`, `BH(ms)`, and `BH/Direct` columns; GFLOP/s is reported only for direct (the Barnes-Hut FLOP count is data-dependent). At small N the constant-factor overhead of the tree build means direct wins; the crossover sits around N = 1k–4k on the benchmark hardware.
-
----
-
-## Validation
-
-`jpl_compare.py compare` reports per-body metrics in two tables:
-
-- **Relative position error**: max and RMS relative error (%) for each body, with all-body and Sun-excluded means
-- **Absolute position error**: max, RMS, and mean absolute error in km
-
-Results are also exported to `tests/comparison_results.json`.
-
-```bash
-# Compare all bodies
-python src/jpl_compare.py compare
-
-# Compare specific bodies
-python src/jpl_compare.py compare --bodies Mercury,Venus,Earth
-```
-
----
-
-## Visualization
-
-### Matplotlib (interactive 3D viewer)
-
-```bash
-python src/visualize.py
-python src/visualize.py --speed 4        # start at 4× speed
-```
-
-| Key | Action |
-|---|---|
-| Space | Play / Pause |
-| Right / Left | Step forward / backward |
-| Up / Down | Speed up (2×) / slow down (0.5×) |
-| R | Reset to frame 0 |
-| T | Toggle trails |
-| Q | Quit |
-
-### Rerun (dashboard with diagnostics)
-
-```bash
-pip install rerun-sdk
-python src/render.py                     # open Rerun viewer
-python src/render.py --save sim.rrd      # save to file
-```
-
-Displays 3D orbits alongside energy conservation, momentum drift, and heliocentric distance plots.
+First close passage predicted by van der Marel 2012 at $t \approx 3.9$ Gyr, final merger around $t \approx 5.9$ Gyr. Validation plot in `tests/galaxy_separation.png`.
 
 ---
 
 ## Project Structure
 
 ```
-├── src/
-│   ├── main.cpp                # Entry point
-│   ├── Config.hpp              # Single-source configuration
-│   ├── Body.hpp                # Initial conditions (auto-generated)
-│   ├── Force/                  # Gravity: direct O(N²) SIMD kernel + Barnes-Hut O(N log N) octree
-│   ├── Integrator/             # Yoshida 4th-order + Velocity Verlet
-│   ├── Particle/               # SoA particle data (single contiguous allocation)
-│   ├── Simulation/             # Time-stepping loop, conservation diagnostics
-│   ├── Output/                 # Binary output format
-│   ├── jpl_compare.py          # JPL fetch + validation pipeline
-│   ├── visualize.py            # Interactive 3D orbit viewer (Matplotlib)
-│   └── render.py               # Rerun dashboard with diagnostics
+├── src/                            # C++ source (build inputs)
+│   ├── main.cpp                    # Entry point (reads tests/sim_ic.bin)
+│   ├── Config.hpp                  # Universal constants (G, time units)
+│   ├── Force/                      # Direct O(N²) SIMD + Barnes-Hut O(N log N) octree
+│   ├── Integrator/                 # Yoshida 4th-order + Velocity Verlet
+│   ├── Particle/                   # SoA particle data (single contiguous allocation)
+│   ├── Simulation/                 # Time-stepping loop, conservation diagnostics
+│   └── Output/                     # Binary output format
+│
+├── tools/                          # Python tooling (auxiliary)
+│   ├── solar/
+│   │   ├── fetch.py                # JPL Horizons fetcher -> tests/sim_ic.bin
+│   │   ├── compare.py              # Validate against JPL reference
+│   │   ├── visualize.py            # Matplotlib viewer
+│   │   └── render.py               # Rerun dashboard
+│   └── galaxy/
+│       ├── generate.py             # Plummer-sphere sampler -> tests/sim_ic.bin
+│       ├── compare.py              # Separation-vs-time validation
+│       ├── visualize.py            # Matplotlib viewer
+│       └── render.py               # Rerun dashboard
+│
 ├── scripts/
-│   ├── run.sh                  # Full pipeline runner (Linux/macOS)
-│   ├── run.ps1                 # Full pipeline runner (Windows)
-│   ├── test.sh                 # Test & benchmark runner (Linux/macOS)
-│   └── test.ps1                # Test & benchmark runner (Windows)
+│   ├── run.sh / run.ps1            # Simulation pipeline runner
+│   └── test.sh / test.ps1          # Test & benchmark runner
+│
 ├── tests/
-│   ├── unit_tests/             # 21 unit tests (integrator, force, conservation, Barnes-Hut)
-│   ├── benchmark/              # Serial vs OpenMP scaling benchmark
-│   └── ...                     # Generated validation data (gitignored)
+│   ├── unit_tests.cpp              # 23 unit tests
+│   ├── benchmark.cpp               # Scaling benchmark
+│   ├── sim_ic.bin                  # Initial conditions (generated, gitignored)
+│   ├── sim_output.bin              # Simulation output (generated, gitignored)
+│   ├── jpl_reference.csv           # JPL reference ephemeris (generated)
+│   └── comparison_results.json     # Validation summary (generated)
+│
 ├── docs/
 │   └── N_Body_Technical_Paper.pdf
 ├── CMakeLists.txt
 └── README.md
 ```
+
+---
+
+## Configuration
+
+Scenario parameters (dt, total time, output cadence, softening) are determined by the IC file, not by `Config.hpp`. Each IC generator writes a header with the appropriate values for its scenario:
+
+- Solar: dt = 900 s, 249 years, output every 487 hours, ε = 10⁻⁹ m
+- Galaxy: dt = 1 Myr, 6 Gyr, output every 10 Myr, ε = 100 pc
+
+To customize, edit the constants near the top of `tools/solar/fetch.py` (`SOLAR_*`) or `tools/galaxy/generate.py` (`GALAXY_*`), regenerate the IC, and rerun. `Config.hpp` only holds universal constants (G, time unit conversions, OpenMP threshold).
 
 ---
 
@@ -215,12 +248,6 @@ Displays 3D orbits alongside energy conservation, momentum drift, and heliocentr
 
 **Branchless force kernel.** Self-interaction is eliminated with a floating-point mask rather than a conditional branch, preserving SIMD vectorization. Newton's third law symmetry is intentionally not exploited; the doubled FLOP count is traded for regular memory access patterns and freedom from race conditions under OpenMP.
 
-**Barnes-Hut octree.** A second `Force` implementation provides O(N log N) gravity for larger ensembles. The tree is rebuilt every timestep via top-down counting-sort partition into octants; storage capacity is sticky across calls so only the size resets. Each node stores center of mass, total mass, bounding-box geometry, and eight child pointers, with leaves disambiguated by a sentinel `children[0] = -1`. Acceleration is computed with the Barnes-Hut multipole acceptance criterion `(2·half_width)² < θ²·d²`: distant subtrees collapse to a single COM evaluation, nearby subtrees recurse to leaf buckets (default size 8) where each particle is summed pairwise via the same softened Newtonian kernel as the direct path. Self-interaction in the leaf is masked with the same branchless trick. Traversal is OpenMP-parallel with `schedule(dynamic, 32)` because per-particle cost varies with local density; the tree itself is read-only during traversal so no synchronization is needed. The direct kernel remains the default at N = 35 because Barnes-Hut's tree-build overhead is not amortized at that scale and the symplectic energy guarantee weakens once the multipole approximation enters the loop.
+**Barnes-Hut octree.** A second `Force` implementation provides O(N log N) gravity for larger ensembles. The tree is rebuilt every timestep via top-down counting-sort partition into octants; storage capacity is sticky across calls so only the size resets. Each node stores center of mass, total mass, bounding-box geometry, eight child pointers, and an explicit `is_leaf` flag (disambiguating leaves from internal nodes with sparse octants).
 
-**OpenMP parallelization.** Thread parallelism activates above a configurable threshold. SIMD vectorization of the inner loop is always active. At N = 131,072, OpenMP yields 4.60x speedup on 12 threads (124,810 ms to 27,146 ms), with throughput reaching an estimated ~154 GFLOP/s compared with ~33 GFLOP/s for the serial baseline. Scaling improves with N and then saturates, suggesting limitation by shared hardware resources such as cache, memory hierarchy, and thread-level overhead.
-
----
-
-## License
-
-MIT
+**Binary IC format.** Both IC generators write a single binary file with a 40-byte header (N, dt, total_time, output_dt, eps) followed by 32-byte name records and 7-double-per-particle phase-space coordinates. The simulator reads this directly and configures itself from the header; no scenario-specific code paths exist in the C++ side.

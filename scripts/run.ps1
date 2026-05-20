@@ -2,16 +2,16 @@
 
 <#
 .SYNOPSIS
-    Simulation runner. Builds and runs main against tests/sim_ic.bin,
-    which is produced by jpl_compare.py fetch (solar) or
-    generate_galaxies.py (galaxy).
+    Simulation Pipeline Runner; generates the IC, builds, runs, validates, and visualizes.
 
 .EXAMPLE
-    .\scripts\run.ps1                              # use existing sim_ic.bin
-    .\scripts\run.ps1 -Fetch                       # fetch solar IC, then run
-    .\scripts\run.ps1 -Galaxy -N 25000             # generate galaxy IC, then run
-    .\scripts\run.ps1 -Force bh -Theta 0.5         # pass through to main
-    .\scripts\run.ps1 -Visualize                   # matplotlib viewer after sim
+    .\run.ps1                                  # use existing tests/sim_ic.bin
+    .\run.ps1 -Fetch                           # fetch solar IC from JPL, then run
+    .\run.ps1 -Galaxy                          # generate MW-Andromeda IC, then run
+    .\run.ps1 -Galaxy -N 50000                 # 50k particles per galaxy
+    .\run.ps1 -Force bh -Theta 0.5             # Barnes-Hut force at theta = 0.5
+    .\run.ps1 -Galaxy -Force bh -Visualize
+    .\run.ps1 -Fetch -Visualize -Render        # full solar pipeline with both viewers
 #>
 
 param(
@@ -29,51 +29,62 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ($Fetch -and $Galaxy) {
-    Write-Error "cannot combine -Fetch and -Galaxy"
+    Write-Error "ERROR: cannot combine -Fetch and -Galaxy"
     exit 1
 }
 
+# Stage IC:
 if ($Fetch) {
-    Write-Host "Fetching solar IC..."
-    $FetchArgs = @("src/jpl_compare.py", "fetch", "--start", $Start)
+    Write-Host "Fetching solar IC from JPL Horizons..."
+    $FetchArgs = @("tools/solar/fetch.py", "--start", $Start)
     if (-not $NoMoons) { $FetchArgs += "--moons" }
     python $FetchArgs
     if ($LASTEXITCODE -ne 0) { Write-Error "JPL fetch failed"; exit 1 }
 } elseif ($Galaxy) {
-    Write-Host "Generating galaxy IC..."
-    python src/generate_galaxies.py --n $N
+    Write-Host "Generating MW-Andromeda galaxy IC..."
+    python tools/galaxy/generate.py --n $N
     if ($LASTEXITCODE -ne 0) { Write-Error "Galaxy generation failed"; exit 1 }
 }
 
+# Build:
 Write-Host ""
 Write-Host "Building..."
 cmake -B build -G "MinGW Makefiles" 2>$null | Out-Null
-cmake --build build --config Release
+cmake --build build --target main --config Release
 if ($LASTEXITCODE -ne 0) { Write-Error "Build failed"; exit 1 }
 
+# Run:
 Write-Host ""
 Write-Host "Running simulation (force=$Force, theta=$Theta)..."
 ./build/main.exe --force $Force --theta $Theta
 if ($LASTEXITCODE -ne 0) { Write-Error "Simulation failed"; exit 1 }
 
+# Validate (solar only):
 if (-not $Galaxy) {
     Write-Host ""
     Write-Host "Validating against JPL Horizons..."
-    python src/jpl_compare.py compare
+    python tools/solar/compare.py
 }
 
+# Visualize:
 if ($Visualize) {
     Write-Host ""
+    Write-Host "Opening matplotlib viewer..."
     if ($Galaxy) {
-        python src/visualize_galaxies.py
+        python tools/galaxy/visualize.py
     } else {
-        python src/visualize.py
+        python tools/solar/visualize.py
     }
 }
 
 if ($Render) {
     Write-Host ""
-    python src/render.py
+    Write-Host "Opening Rerun viewer..."
+    if ($Galaxy) {
+        python tools/galaxy/render.py
+    } else {
+        python tools/solar/render.py
+    }
 }
 
 Write-Host ""
