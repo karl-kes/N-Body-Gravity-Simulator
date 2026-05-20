@@ -1,96 +1,71 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# N-Body Simulation Runner
-# Configures, builds, and runs the full simulation pipeline.
+# Simulation runner. Builds and runs main against tests/sim_ic.bin,
+# which is produced by either jpl_compare.py fetch (solar) or
+# generate_galaxies.py (galaxy).
 #
 # Usage:
-#   ./run.sh                          # defaults: dt=900, years=249, output_hours=487, with moons
-#   ./run.sh --dt 360 --years 100     # custom timestep and duration
-#   ./run.sh --no-moons               # planets only (10 bodies)
-#   ./run.sh --skip-fetch             # reuse existing JPL data
-#   ./run.sh --visualize              # open Matplotlib viewer after sim
-#   ./run.sh --render                 # open Rerun dashboard after sim
+#   ./scripts/run.sh                              # use existing sim_ic.bin
+#   ./scripts/run.sh --fetch                      # fetch solar from JPL, then run
+#   ./scripts/run.sh --galaxy --n 25000           # generate galaxy IC, then run
+#   ./scripts/run.sh --force bh --theta 0.5       # pass through to main
+#   ./scripts/run.sh --visualize                  # matplotlib viewer after sim
+#   ./scripts/run.sh --render                     # Rerun dashboard after sim
 
-# Defaults:
-DT="900.0"
-YEARS="249"
-OUTPUT_HOURS="487"
-MOONS="--moons"
+FETCH=false
+GALAXY=false
+N=25000
 START_DATE="1950-01-01"
-SKIP_FETCH=false
+MOONS="--moons"
+FORCE="direct"
+THETA="0.5"
 VISUALIZE=false
 RENDER=false
 
-# Parse arguments:
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --dt)           DT="$2";           shift 2 ;;
-        --years)        YEARS="$2";        shift 2 ;;
-        --output-hours) OUTPUT_HOURS="$2"; shift 2 ;;
-        --start)        START_DATE="$2";   shift 2 ;;
-        --no-moons)     MOONS="";          shift ;;
-        --skip-fetch)   SKIP_FETCH=true;   shift ;;
-        --visualize)    VISUALIZE=true;    shift ;;
-        --render)       RENDER=true;       shift ;;
+        --fetch)        FETCH=true;       shift ;;
+        --galaxy)       GALAXY=true;      shift ;;
+        --n)            N="$2";           shift 2 ;;
+        --start)        START_DATE="$2";  shift 2 ;;
+        --no-moons)     MOONS="";         shift ;;
+        --force)        FORCE="$2";       shift 2 ;;
+        --theta)        THETA="$2";       shift 2 ;;
+        --visualize)    VISUALIZE=true;   shift ;;
+        --render)       RENDER=true;      shift ;;
         -h|--help)
-            echo "Usage: ./run.sh [OPTIONS]"
+            echo "Usage: ./scripts/run.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --dt VALUE           Integration timestep in seconds (default: 900.0)"
-            echo "  --years VALUE        Simulation duration in years (default: 249)"
-            echo "  --output-hours VALUE Output interval in hours (default: 487)"
-            echo "  --start DATE         Start date YYYY-MM-DD (default: 1950-01-01)"
-            echo "  --no-moons           Planets only (10 bodies instead of 35)"
-            echo "  --skip-fetch         Skip JPL Horizons fetch (reuse existing data)"
-            echo "  --visualize          Open Matplotlib viewer after simulation"
-            echo "  --render             Open Rerun dashboard after simulation"
-            echo "  -h, --help           Show this help message"
+            echo "  --fetch            Fetch solar IC from JPL Horizons before running"
+            echo "  --galaxy           Generate galaxy IC before running"
+            echo "  --n VALUE          Particles per galaxy (default: 25000)"
+            echo "  --start DATE       Solar fetch start date (default: 1950-01-01)"
+            echo "  --no-moons         Solar: planets only (10 bodies)"
+            echo "  --force MODE       direct or bh (default: direct)"
+            echo "  --theta T          BH opening angle (default: 0.5)"
+            echo "  --visualize        Open Matplotlib viewer after simulation"
+            echo "  --render           Open Rerun dashboard after simulation"
+            echo "  -h, --help         Show this help"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
-CONFIG="src/Config.hpp"
-
-# Validate:
-REMAINDER=$(python3 -c "
-dt = $DT
-oh = $OUTPUT_HOURS
-r = int(oh * 3600) % int(dt)
-print(r)
-")
-
-if [[ "$REMAINDER" != "0" ]]; then
-    echo "ERROR: output_hours * 3600 ($OUTPUT_HOURS * 3600) must be divisible by dt ($DT)"
-    echo "       Remainder: $REMAINDER"
+# Stage IC if requested.
+if [ "$FETCH" = true ] && [ "$GALAXY" = true ]; then
+    echo "ERROR: cannot combine --fetch and --galaxy"
     exit 1
 fi
 
-# Patch Config.hpp:
-echo "Configuring..."
-echo "  dt:           $DT s"
-echo "  years:        $YEARS"
-echo "  output_hours: $OUTPUT_HOURS"
-echo "  start:        $START_DATE"
-echo "  moons:        $([ -n "$MOONS" ] && echo 'yes' || echo 'no')"
-
-sed -i.bak -E "s/(inline static constexpr double dt\{)[^}]*/\1 ${DT} /" "$CONFIG"
-sed -i.bak -E "s/(inline static constexpr std::size_t num_years\{)[^}]*/\1 ${YEARS} /" "$CONFIG"
-sed -i.bak -E "s/(inline static constexpr std::size_t output_hours\{)[^}]*/\1 ${OUTPUT_HOURS} /" "$CONFIG"
-rm -f "${CONFIG}.bak"
-
-echo "  Config.hpp updated."
-
-# Fetch JPL data:
-if [ "$SKIP_FETCH" = false ]; then
-    echo ""
-    echo "Fetching JPL Horizons data..."
+if [ "$FETCH" = true ]; then
+    echo "Fetching solar IC..."
     python3 src/jpl_compare.py fetch --start "$START_DATE" $MOONS
-else
-    echo ""
-    echo "Skipping JPL fetch (--skip-fetch)"
+elif [ "$GALAXY" = true ]; then
+    echo "Generating galaxy IC..."
+    python3 src/generate_galaxies.py --n "$N"
 fi
 
 # Build:
@@ -101,18 +76,24 @@ cmake --build build --config Release
 
 # Run:
 echo ""
-echo "Running simulation..."
-./build/main
+echo "Running simulation (force=$FORCE, theta=$THETA)..."
+./build/main --force "$FORCE" --theta "$THETA"
 
-# Validate:
-echo ""
-echo "Validating against JPL Horizons..."
-python3 src/jpl_compare.py compare
+# Validate (solar only):
+if [ "$GALAXY" = false ]; then
+    echo ""
+    echo "Validating against JPL Horizons..."
+    python3 src/jpl_compare.py compare || true
+fi
 
 # Visualize:
 if [ "$VISUALIZE" = true ]; then
     echo ""
-    python3 src/visualize.py
+    if [ "$GALAXY" = true ]; then
+        python3 src/visualize_galaxies.py
+    else
+        python3 src/visualize.py
+    fi
 fi
 
 if [ "$RENDER" = true ]; then

@@ -23,11 +23,8 @@ public:
 
 class Gravity : public Force {
 public:
-    Gravity();
+    explicit Gravity( double const eps = 1e-9 );
 
-    // Accumulates gravitational acceleration on body i due to body j.
-    // mask = 0.0 for self-interaction (i == j), 1.0 otherwise.
-    // Branchless mask preserves SIMD vectorization of the inner loop.
     static inline void accumulate_pairwise (
         double const pxi, double const pyi, double const pzi,
         double const pxj, double const pyj, double const pzj, double const mj,
@@ -44,9 +41,9 @@ public:
 
         double const G_mj_R_inv_cb{ G * mj * R_inv_cb };
 
-        double f_x{ G_mj_R_inv_cb * dx };
-        double f_y{ G_mj_R_inv_cb * dy };
-        double f_z{ G_mj_R_inv_cb * dz };
+        double const f_x{ G_mj_R_inv_cb * dx };
+        double const f_y{ G_mj_R_inv_cb * dy };
+        double const f_z{ G_mj_R_inv_cb * dz };
 
         a_xi += mask * f_x;
         a_yi += mask * f_y;
@@ -54,4 +51,9 @@ public:
     }
 
     void apply( Particles &particles ) const override;
+
+    [[nodiscard]] double eps() const { return eps_; }
+
+private:
+    double eps_;
 };

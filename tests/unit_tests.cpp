@@ -159,6 +159,89 @@ static void step_n( Particles &p, Integrator &integ,
     }
 }
 
+// Sample N particles from a Plummer sphere with scale radius a and total mass M.
+// r = a / sqrt(u^(-2/3) - 1), inverse CDF of the enclosed-mass profile.
+// Isotropic angular sampling. Velocities and accelerations zeroed.
+static void populate_plummer( Particles &p, std::size_t const N,
+                              double const a, double const M_tot,
+                              unsigned const seed ) {
+    std::mt19937_64 rng{ seed };
+    std::uniform_real_distribution<double> u_dist{ 0.0, 1.0 };
+    double const m_per{ M_tot / static_cast<double>( N ) };
+
+    for ( std::size_t i{}; i < N; ++i ) {
+        double const u{ std::clamp( u_dist( rng ), 1e-6, 1.0 - 1e-6 ) };
+        double const r{ a / std::sqrt( std::pow( u, -2.0 / 3.0 ) - 1.0 ) };
+
+        double const cos_theta{ 2.0 * u_dist( rng ) - 1.0 };
+        double const sin_theta{ std::sqrt( 1.0 - cos_theta * cos_theta ) };
+        double const phi{ 2.0 * std::numbers::pi * u_dist( rng ) };
+
+        p.pos_x()[i] = r * sin_theta * std::cos( phi );
+        p.pos_y()[i] = r * sin_theta * std::sin( phi );
+        p.pos_z()[i] = r * cos_theta;
+        p.vel_x()[i] = 0.0; p.vel_y()[i] = 0.0; p.vel_z()[i] = 0.0;
+        p.acc_x()[i] = 0.0; p.acc_y()[i] = 0.0; p.acc_z()[i] = 0.0;
+        p.mass()[i]  = m_per;
+    }
+}
+
+// Uniform random positions in [-L, L]^3 with equal mass per particle.
+static void populate_uniform_cube( Particles &p, std::size_t const N,
+                                   double const L, double const M_tot,
+                                   unsigned const seed ) {
+    std::mt19937_64 rng{ seed };
+    std::uniform_real_distribution<double> dist{ -L, L };
+    double const m_per{ M_tot / static_cast<double>( N ) };
+
+    for ( std::size_t i{}; i < N; ++i ) {
+        p.pos_x()[i] = dist( rng );
+        p.pos_y()[i] = dist( rng );
+        p.pos_z()[i] = dist( rng );
+        p.vel_x()[i] = 0.0; p.vel_y()[i] = 0.0; p.vel_z()[i] = 0.0;
+        p.acc_x()[i] = 0.0; p.acc_y()[i] = 0.0; p.acc_z()[i] = 0.0;
+        p.mass()[i]  = m_per;
+    }
+}
+
+struct ForceErrorStats {
+    double mean_rel;
+    double max_rel;
+};
+
+// Apply direct and BH forces to identical configurations, return per-particle
+// relative force error |a_BH - a_direct| / |a_direct|, aggregated as mean and max.
+static ForceErrorStats compare_forces( Particles &p_direct, Particles &p_bh,
+                                       double const theta ) {
+    Gravity{}.apply( p_direct );
+    Gravity_BarnesHut{ theta }.apply( p_bh );
+
+    std::size_t const N{ p_direct.num_particles() };
+    double sum_rel{};
+    double max_rel{};
+    std::size_t counted{};
+
+    for ( std::size_t i{}; i < N; ++i ) {
+        double const ax{ p_direct.acc_x()[i] };
+        double const ay{ p_direct.acc_y()[i] };
+        double const az{ p_direct.acc_z()[i] };
+        double const a_mag{ std::sqrt( ax*ax + ay*ay + az*az ) };
+        if ( a_mag == 0.0 ) continue;
+
+        double const dx{ p_bh.acc_x()[i] - ax };
+        double const dy{ p_bh.acc_y()[i] - ay };
+        double const dz{ p_bh.acc_z()[i] - az };
+        double const err{ std::sqrt( dx*dx + dy*dy + dz*dz ) };
+
+        double const rel{ err / a_mag };
+        sum_rel += rel;
+        max_rel = std::max( max_rel, rel );
+        ++counted;
+    }
+
+    return { sum_rel / static_cast<double>( counted ), max_rel };
+}
+
 
 // 1. Yoshida coefficients
 
@@ -672,6 +755,86 @@ TEST( bh_energy_drift_bounded ) {
     ++g_pass;
 }
 
+TEST( bh_force_accuracy_plummer ) {
+    // Plummer sphere: centrally concentrated, stresses adaptive tree refinement.
+    // Bounds are loose initial regression values. After first run on production
+    // hardware, observe the actual values and tighten to ~2-3x observed.
+    // Reference: Hernquist 1987 reports RMS relative force error of ~0.5% at
+    // theta=0.5 for monopole BH; bounds allow headroom for N=2000 finite-size
+    // effects and summation-order rounding.
+    constexpr std::size_t N{ 2000 };
+    double const a{ 1e11 };
+    double const M_tot{ 1e30 };
+
+    Particles p_direct{ N };
+    Particles p_bh{ N };
+    populate_plummer( p_direct, N, a, M_tot, 42 );
+    populate_plummer( p_bh,     N, a, M_tot, 42 );
+
+    ForceErrorStats const stats{ compare_forces( p_direct, p_bh, 0.5 ) };
+
+    ASSERT_LT( stats.mean_rel, 1e-2 );
+    ASSERT_LT( stats.max_rel,  1e-1 );
+    ++g_pass;
+}
+
+TEST( bh_force_accuracy_uniform_cube ) {
+    // Uniform cube: balanced tree, isolates bulk-traversal correctness from
+    // adaptive-refinement behavior. Divergence between this and the Plummer
+    // test localizes bugs to one path or the other.
+    constexpr std::size_t N{ 2000 };
+    double const L{ 1e11 };
+    double const M_tot{ 1e30 };
+
+    Particles p_direct{ N };
+    Particles p_bh{ N };
+    populate_uniform_cube( p_direct, N, L, M_tot, 42 );
+    populate_uniform_cube( p_bh,     N, L, M_tot, 42 );
+
+    ForceErrorStats const stats{ compare_forces( p_direct, p_bh, 0.5 ) };
+
+    // Cube errors should be smaller than Plummer (no deep clusters).
+    ASSERT_LT( stats.mean_rel, 5e-3 );
+    ASSERT_LT( stats.max_rel,  5e-2 );
+    ++g_pass;
+}
+
+TEST( bh_force_error_decreases_with_theta ) {
+    // Verify BH error decreases monotonically as theta tightens. This is a
+    // weaker claim than the theta^2 leading-order scaling but it's the one
+    // that actually holds for the mean-relative-error metric. The per-cell
+    // theta^2 scaling is real but doesn't survive aggregation across particles
+    // (cancellations from symmetric distributions produce steeper empirical
+    // scaling, closer to theta^3 or theta^4 depending on the theta range).
+    constexpr std::size_t N{ 2000 };
+    double const L{ 1e11 };
+    double const M_tot{ 1e30 };
+
+    auto run = [&]( double const theta ) -> ForceErrorStats {
+        Particles p_d{ N }, p_b{ N };
+        populate_uniform_cube( p_d, N, L, M_tot, 42 );
+        populate_uniform_cube( p_b, N, L, M_tot, 42 );
+        return compare_forces( p_d, p_b, theta );
+    };
+
+    ForceErrorStats const s_10{  run( 1.0 ) };
+    ForceErrorStats const s_05{  run( 0.5 ) };
+    ForceErrorStats const s_025{ run( 0.25 ) };
+
+    std::cout << "\n    [diag] mean rel err: theta=1.0 " << std::scientific << std::setprecision( 3 )
+              << s_10.mean_rel << ", theta=0.5 " << s_05.mean_rel
+              << ", theta=0.25 " << s_025.mean_rel << "\n   ";
+
+    // Monotonic improvement (the actually-true scaling property).
+    ASSERT_TRUE( s_10.mean_rel > s_05.mean_rel );
+    ASSERT_TRUE( s_05.mean_rel > s_025.mean_rel );
+
+    // Significant total dynamic range across the theta sweep. Empirically
+    // ~165x on uniform cube N=2000; assert > 20x to catch "BH ignores theta"
+    // failure modes while leaving slack for hardware and seed variation.
+    ASSERT_TRUE( s_10.mean_rel / s_025.mean_rel > 20.0 );
+    ++g_pass;
+}
 
 // Main
 

@@ -6,9 +6,11 @@
 #include <omp.h>
 
 Gravity_BarnesHut::Gravity_BarnesHut( double const theta,
-                                      std::size_t const leaf_bucket )
+                                      std::size_t const leaf_bucket,
+                                      double const eps )
 : theta_{ theta }
 , leaf_bucket_{ leaf_bucket }
+, eps_{ eps }
 { }
 
 
@@ -68,7 +70,6 @@ void Gravity_BarnesHut::build_recursive(
         for ( int k{}; k < 8; ++k ) n.children[k] = -1;
     }
 
-    // Leaf condition: small bucket or hit depth cap (degenerate clusters).
     if ( count <= static_cast<int>( leaf_bucket_ ) || depth >= MAX_DEPTH ) {
         double m_sum{};
         double cx_sum{}, cy_sum{}, cz_sum{};
@@ -142,7 +143,6 @@ void Gravity_BarnesHut::build_recursive(
                          px, py, pz, mass );
     }
 
-    // Combine child COMs into this node's COM.
     double m_sum{};
     double cx_sum{}, cy_sum{}, cz_sum{};
     for ( int k{}; k < 8; ++k ) {
@@ -172,7 +172,7 @@ void Gravity_BarnesHut::traverse_for_particle(
     double const* RESTRICT mass,
     double &a_xi, double &a_yi, double &a_zi ) const
 {
-    constexpr double eps_sq{ config::EPS * config::EPS };
+    double const eps_sq{ eps_ * eps_ };
     constexpr double G{ config::G };
 
     double const theta_sq{ theta_ * theta_ };
@@ -206,11 +206,13 @@ void Gravity_BarnesHut::traverse_for_particle(
             continue;
         }
 
+        // MAC: open if (2 * half_width)^2 >= theta^2 * d^2, else approximate.
         double const dx{ n.com_x - pxi };
         double const dy{ n.com_y - pyi };
         double const dz{ n.com_z - pzi };
         double const d_sq{ dx*dx + dy*dy + dz*dz };
         double const s{ 2.0 * n.half_width };
+
         if ( s * s < theta_sq * d_sq ) {
             Gravity::accumulate_pairwise(
                 pxi, pyi, pzi,
@@ -243,9 +245,6 @@ void Gravity_BarnesHut::apply( Particles &particles ) const {
     double* RESTRICT ay{ particles.acc_y() };
     double* RESTRICT az{ particles.acc_z() };
 
-    // Traversal cost varies per particle (clustered regions open more nodes),
-    // so dynamic schedule keeps load balanced. Tree is read-only during
-    // traversal so no synchronization is required.
     if ( N >= config::OMP_THRESHOLD ) {
         #pragma omp parallel for schedule( dynamic, 32 )
         for ( std::size_t i = 0; i < N; ++i ) {

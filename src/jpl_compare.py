@@ -5,24 +5,33 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import ssl
 
-# Usage (reads config from Config.hpp automatically):
-# python jpl_compare.py fetch --moons
-# python jpl_compare.py compare
+# Usage:
+#   python jpl_compare.py fetch --moons
+#   python jpl_compare.py compare
+
+# Binary IC format (matches main.cpp):
+#   Header:
+#     uint64_t N
+#     double   dt          (s)
+#     double   total_time  (s)
+#     double   output_dt   (s)
+#     double   eps         (m)
+#   Names (32 * N bytes, null-padded)
+#   Particle data (7 * N doubles): mass, x, y, z, vx, vy, vz   (all SI)
 
 AU_KM = 1.496e8
+KM_TO_M = 1e3
 SEC_PER_YR = 365.25 * 86400.0
-G_KM3 = 6.6743e-20
+SEC_PER_HR = 3600.0
+G_KM3 = 6.6743e-20  # km^3 kg^-1 s^-2
 
-def read_config(path="src/Config.hpp"):
-    text = Path(path).read_text()
-    cfg = {}
-    for name in ["output_hours", "num_years"]:
-        m = re.search(rf'{name}\{{\s*(\d+)\s*\}}', text)
-        if not m:
-            print(f"ERROR: Could not find '{name}' in {path}")
-            sys.exit(1)
-        cfg[name] = int(m.group(1))
-    return cfg
+# Solar system scenario parameters:
+SOLAR_DT          = 900.0                       # 15 min (s)
+SOLAR_NUM_YEARS   = 249                         # multi-century integration
+SOLAR_OUTPUT_HRS  = 487                         # output cadence (h)
+SOLAR_EPS         = 1e-9                        # essentially no softening (m)
+SOLAR_TOTAL_TIME  = SOLAR_NUM_YEARS * SEC_PER_YR
+SOLAR_OUTPUT_DT   = SOLAR_OUTPUT_HRS * SEC_PER_HR
 
 PLANETS = [
     ("10",  "Sun",     1.32712440041e11, None),
@@ -69,12 +78,11 @@ MOONS = [
 
 API = "https://ssd.jpl.nasa.gov/api/horizons.api"
 
-# Unverified SSL context for environments where the JPL certificate chain
-# is not trusted (common on university/corporate networks).
-# Only used for JPL Horizons requests, not set globally.
+# Unverified SSL for environments where the JPL chain isn't trusted (university/corp).
 _jpl_ssl_ctx = ssl.create_default_context()
 _jpl_ssl_ctx.check_hostname = False
 _jpl_ssl_ctx.verify_mode = ssl.CERT_NONE
+
 
 def fetch_vectors(body_id, start, stop, step):
     params = {
@@ -90,8 +98,9 @@ def fetch_vectors(body_id, start, stop, step):
             with urllib.request.urlopen(url, timeout=60, context=_jpl_ssl_ctx) as r:
                 return r.read().decode()
         except Exception as e:
-            if attempt < 2: time.sleep(2*(attempt+1))
+            if attempt < 2: time.sleep(2 * (attempt + 1))
             else: raise RuntimeError(f"Failed {body_id}: {e}")
+
 
 def parse_vectors(text):
     soe, eoe = text.find("$$SOE"), text.find("$$EOE")
@@ -110,26 +119,55 @@ def parse_vectors(text):
             except ValueError: pass
     return records
 
+
+def write_ic_file(path, data, names, dt, total_time, output_dt, eps):
+    """Write the unified binary IC format."""
+    N = len(names)
+    Path(path).parent.mkdir(exist_ok=True, parents=True)
+    with open(path, "wb") as f:
+        # Header
+        f.write(struct.pack("Q", N))
+        f.write(struct.pack("d", dt))
+        f.write(struct.pack("d", total_time))
+        f.write(struct.pack("d", output_dt))
+        f.write(struct.pack("d", eps))
+
+        # Names (32 bytes each, null-padded)
+        for name in names:
+            buf = name.encode("ascii", errors="replace")[:31]
+            f.write(buf + b"\x00" * (32 - len(buf)))
+
+        # Particle data: mass, x, y, z, vx, vy, vz in SI
+        for name in names:
+            d = data[name]
+            s = d["states"][0]
+            f.write(struct.pack("d", d["mass"]))
+            f.write(struct.pack("d", s["x"]  * KM_TO_M))
+            f.write(struct.pack("d", s["y"]  * KM_TO_M))
+            f.write(struct.pack("d", s["z"]  * KM_TO_M))
+            f.write(struct.pack("d", s["vx"] * KM_TO_M))
+            f.write(struct.pack("d", s["vy"] * KM_TO_M))
+            f.write(struct.pack("d", s["vz"] * KM_TO_M))
+
+
 # Fetch:
 
 def cmd_fetch(args):
-    cfg = read_config()
-    step = f"{cfg['output_hours']}h"
-    years = cfg["num_years"]
+    step = f"{SOLAR_OUTPUT_HRS}h"
 
     bodies = PLANETS + (MOONS if args.moons else [])
     stop = (datetime.strptime(args.start, "%Y-%m-%d") +
-            timedelta(days=years * 365.25)).strftime("%Y-%m-%d")
+            timedelta(days=SOLAR_NUM_YEARS * 365.25)).strftime("%Y-%m-%d")
 
-    print(f"Config: num_years={years}, output_hours={cfg['output_hours']} -> step={step}")
-    print(f"Fetching {len(bodies)} bodies: {args.start} -> {stop}\n")
+    print(f"Scenario: solar system ({len(bodies)} bodies, {SOLAR_NUM_YEARS} years, dt={SOLAR_DT}s)")
+    print(f"Fetching {args.start} -> {stop}\n")
     data = {}
 
     for i, (bid, name, gm, parent) in enumerate(bodies):
         print(f"  [{i+1}/{len(bodies)}] {name}...", end=" ", flush=True)
         try:
             recs = parse_vectors(fetch_vectors(bid, args.start, stop, step))
-            data[name] = {"id": bid, "gm": gm, "mass": gm/G_KM3,
+            data[name] = {"id": bid, "gm": gm, "mass": gm / G_KM3,
                           "parent": parent, "states": recs}
             print(f"{len(recs)} epochs")
         except Exception as e:
@@ -137,35 +175,17 @@ def cmd_fetch(args):
         time.sleep(0.5)
 
     if not data:
-        print("No data fetched."); return
+        print("No data fetched.")
+        return
 
     Path("tests").mkdir(exist_ok=True)
 
-    with open("src/Body.hpp", "w") as f:
-        f.write('#pragma once\n#include "Particle/Particle.hpp"\n#include "Config.hpp"\n\n')
-        f.write("struct Body {\n    const char* name;\n    double mass;\n")
-        f.write("    double x, y, z;\n    double v_x, v_y, v_z;\n};\n\n")
-        f.write(f"// JPL Horizons | {list(data.values())[0]['states'][0]['date']}\n")
-        f.write("inline constexpr Body bodies[] = {\n")
-        names = list(data.keys())
-        for i, n in enumerate(names):
-            s = data[n]["states"][0]
-            comma = "," if i < len(names)-1 else ""
-            f.write(f'    {{ "{n}", {data[n]["mass"]:.6e},\n')
-            f.write(f'        {s["x"]:.10e}, {s["y"]:.10e}, {s["z"]:.10e},\n')
-            f.write(f'        {s["vx"]:.10e}, {s["vy"]:.10e}, {s["vz"]:.10e} }}{comma}\n')
-        f.write("};\n\n")
-        f.write("inline void initialize_bodies( Particles &particles, std::size_t const num_bodies ) {\n")
-        f.write("    for ( std::size_t i{}; i < num_bodies; ++i ) {\n")
-        for attr, field in [("mass","mass"),("pos_x","x"),("pos_y","y"),("pos_z","z"),
-                            ("vel_x","v_x"),("vel_y","v_y"),("vel_z","v_z")]:
-            mult = " * config::KM_TO_M" if attr != "mass" else ""
-            f.write(f'        particles.{attr}()[i] = bodies[i].{field}{mult};\n')
-        for a in ["acc_x","acc_y","acc_z"]:
-            f.write(f'        particles.{a}()[i] = 0.0;\n')
-        f.write("    }\n}\n")
-    print(f"\n-> src/Body.hpp ({len(data)} bodies)")
+    names = list(data.keys())
+    write_ic_file(args.output, data, names,
+                  SOLAR_DT, SOLAR_TOTAL_TIME, SOLAR_OUTPUT_DT, SOLAR_EPS)
+    print(f"\n-> {args.output} ({len(names)} bodies)")
 
+    # Reference CSV for jpl_compare validation
     with open("tests/jpl_reference.csv", "w") as f:
         f.write("name,jd,date,x_km,y_km,z_km,vx_kms,vy_kms,vz_kms\n")
         for n, d in data.items():
@@ -175,12 +195,13 @@ def cmd_fetch(args):
                         f'{s["vx"]:.10e},{s["vy"]:.10e},{s["vz"]:.10e}\n')
     print(f"-> tests/jpl_reference.csv")
 
-    cat = {n: {"id":d["id"],"mass_kg":d["mass"],"gm":d["gm"],"parent":d["parent"],
-               "epochs":len(d["states"])} for n,d in data.items()}
+    cat = {n: {"id": d["id"], "mass_kg": d["mass"], "gm": d["gm"], "parent": d["parent"],
+               "epochs": len(d["states"])} for n, d in data.items()}
     Path("tests/body_catalog.json").write_text(json.dumps(cat, indent=2))
     print(f"-> tests/body_catalog.json")
 
-# Binary loader:
+
+# Binary output loader:
 
 def load_sim_binary(path):
     data = defaultdict(lambda: {"t": [], "pos": [], "vel": []})
@@ -200,8 +221,6 @@ def load_sim_binary(path):
                 break
 
             frame = np.frombuffer(raw, dtype=np.float64)
-
-            # Step field is uint64 reinterpreted as double (see Output.cpp)
             step = struct.unpack("Q", struct.pack("d", frame[0]))[0]
             time_s = frame[1]
 
@@ -209,21 +228,23 @@ def load_sim_binary(path):
             for i, name in enumerate(names):
                 data[name]["t"].append(time_s)
                 data[name]["pos"].append(states[i, 0:3] / 1e3)  # m -> km
-                data[name]["vel"].append(states[i, 3:6] / 1e3)  # m/s -> km/s
+                data[name]["vel"].append(states[i, 3:6] / 1e3)
 
     return {n: {k: np.array(v) for k, v in d.items()} for n, d in data.items()}
+
 
 # Compare:
 
 def load_ref(path):
-    data = defaultdict(lambda: {"jd":[],"pos":[],"vel":[]})
+    data = defaultdict(lambda: {"jd": [], "pos": [], "vel": []})
     with open(path) as f:
         for row in csv.DictReader(f):
             n = row["name"]
             data[n]["jd"].append(float(row["jd"]))
-            data[n]["pos"].append([float(row["x_km"]),float(row["y_km"]),float(row["z_km"])])
-            data[n]["vel"].append([float(row["vx_kms"]),float(row["vy_kms"]),float(row["vz_kms"])])
-    return {n: {k: np.array(v) for k,v in d.items()} for n,d in data.items()}
+            data[n]["pos"].append([float(row["x_km"]), float(row["y_km"]), float(row["z_km"])])
+            data[n]["vel"].append([float(row["vx_kms"]), float(row["vy_kms"]), float(row["vz_kms"])])
+    return {n: {k: np.array(v) for k, v in d.items()} for n, d in data.items()}
+
 
 def cmd_compare(args):
     ref = load_ref(args.ref)
@@ -232,7 +253,8 @@ def cmd_compare(args):
     if args.bodies:
         shared = [b for b in args.bodies.split(",") if b in shared]
     if not shared:
-        print(f"No shared bodies.\n  Sim: {sorted(sim)}\n  Ref: {sorted(ref)}"); return
+        print(f"No shared bodies.\n  Sim: {sorted(sim)}\n  Ref: {sorted(ref)}")
+        return
 
     print(f"Comparing {len(shared)} bodies\n")
 
@@ -243,16 +265,10 @@ def cmd_compare(args):
         sp = sim[name]["pos"][:n]
         rp = ref[name]["pos"][:n]
 
-        # Absolute position error (km) at each epoch
         abs_err = np.linalg.norm(sp - rp, axis=1)
-
-        # Reference barycentric distance (km) at each epoch
         r_ref = np.linalg.norm(rp, axis=1)
-
-        # Relative error at each epoch
         rel = np.where(r_ref > 0, abs_err / r_ref, 0)
 
-        # Skip epoch 0 (identical by construction) for all metrics
         results[name] = {
             "max_rel_pct":  rel[1:].max() * 100,
             "rms_rel_pct":  np.sqrt(np.mean(rel[1:]**2)) * 100,
@@ -261,7 +277,6 @@ def cmd_compare(args):
             "mean_abs_km":  abs_err[1:].mean(),
         }
 
-    # Table 1: Relative position error (%)
     print(f"{'Body':<14} {'Max Rel (%)':<16} {'RMS Rel (%)':<16}")
     print("=" * 48)
     for name in sorted(results, key=lambda n: results[n]["max_rel_pct"], reverse=True):
@@ -273,11 +288,10 @@ def cmd_compare(args):
 
     print("=" * 48)
     print(f"{'Worst:':<14} {max(rel_vals):.6f}%")
-    print(f"{'Mean:':<14} {sum(rel_vals)/len(rel_vals):.6f}%")
+    print(f"{'Mean:':<14} {sum(rel_vals) / len(rel_vals):.6f}%")
     if len(rel_vals_no_sun) < len(rel_vals):
-        print(f"{'Mean (ex Sun):':<14} {sum(rel_vals_no_sun)/len(rel_vals_no_sun):.6f}%")
+        print(f"{'Mean (ex Sun):':<14} {sum(rel_vals_no_sun) / len(rel_vals_no_sun):.6f}%")
 
-    # Table 2: Absolute position error (km)
     print(f"\n{'Body':<14} {'Max Abs (km)':<18} {'RMS Abs (km)':<18} {'Mean Abs (km)':<18}")
     print("=" * 70)
     for name in sorted(results, key=lambda n: results[n]["max_abs_km"], reverse=True):
@@ -289,11 +303,10 @@ def cmd_compare(args):
 
     print("=" * 70)
     print(f"{'Worst:':<14} {max(abs_vals):.2f} km")
-    print(f"{'Mean:':<14} {sum(abs_vals)/len(abs_vals):.2f} km")
+    print(f"{'Mean:':<14} {sum(abs_vals) / len(abs_vals):.2f} km")
     if len(abs_vals_no_sun) < len(abs_vals):
-        print(f"{'Mean (ex Sun):':<14} {sum(abs_vals_no_sun)/len(abs_vals_no_sun):.2f} km")
+        print(f"{'Mean (ex Sun):':<14} {sum(abs_vals_no_sun) / len(abs_vals_no_sun):.2f} km")
 
-    # Export JSON summary
     summary = {
         "bodies": {n: r for n, r in results.items()},
         "summary": {
@@ -309,6 +322,7 @@ def cmd_compare(args):
     out_path.write_text(json.dumps(summary, indent=2, default=float))
     print(f"\n-> {out_path}")
 
+
 # Interface:
 
 def main():
@@ -318,6 +332,7 @@ def main():
     f = sub.add_parser("fetch")
     f.add_argument("--start", default="1950-01-01")
     f.add_argument("--moons", action="store_true")
+    f.add_argument("--output", default="tests/sim_ic.bin")
 
     c = sub.add_parser("compare")
     c.add_argument("--sim", default="tests/sim_output.bin")
@@ -325,9 +340,10 @@ def main():
     c.add_argument("--bodies", default=None)
 
     args = p.parse_args()
-    if args.cmd == "fetch": cmd_fetch(args)
+    if args.cmd == "fetch":     cmd_fetch(args)
     elif args.cmd == "compare": cmd_compare(args)
     else: p.print_help()
+
 
 if __name__ == "__main__":
     main()

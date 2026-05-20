@@ -9,9 +9,9 @@
 // Internal nodes: children[k] is a node index for octant k, or -1 if empty.
 // Leaf nodes:     children[0] = -2 (sentinel), children[1] = first index into
 //                 indices_, children[2] = bucket count.
-// Disambiguation: a node is a leaf iff children[0] == -2.
-// (-2 is distinct from the "empty child" sentinel -1; using -1 for both
-//  would cause internal nodes with empty octant 0 to be misread as leaves.)
+// Disambiguation: a node is a leaf iff children[0] == -2. The leaf sentinel
+// must differ from the "empty child" sentinel -1, or internal nodes with an
+// empty octant 0 would be misread as leaves during traversal.
 struct BHNode {
     double com_x, com_y, com_z;
     double total_mass;
@@ -23,16 +23,19 @@ struct BHNode {
 class Gravity_BarnesHut : public Force {
 public:
     explicit Gravity_BarnesHut( double const theta = 0.5,
-                                std::size_t const leaf_bucket = 8 );
+                                std::size_t const leaf_bucket = 8,
+                                double const eps = 1e-9 );
 
     void apply( Particles &particles ) const override;
 
     [[nodiscard]] double theta() const { return theta_; }
     [[nodiscard]] std::size_t leaf_bucket() const { return leaf_bucket_; }
+    [[nodiscard]] double eps() const { return eps_; }
 
 private:
     double theta_;
     std::size_t leaf_bucket_;
+    double eps_;
 
     // Tree state. Rebuilt every apply(); capacity is sticky to avoid
     // re-allocation across integration steps.
@@ -46,8 +49,6 @@ private:
 
     void build_tree( Particles const &particles ) const;
 
-    // Always re-access nodes via nodes_[id]; never hold a reference across
-    // recursive calls, since vector growth invalidates references.
     void build_recursive( int const node_id,
                           int const begin, int const end,
                           double const bcx, double const bcy, double const bcz,

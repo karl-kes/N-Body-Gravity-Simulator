@@ -1,9 +1,11 @@
 #include "Simulation.hpp"
 
-Simulation::Simulation( 
+Simulation::Simulation(
     std::size_t const num_particles,
-    std::size_t const steps, 
+    std::size_t const steps,
     std::size_t const output_interval,
+    double const dt,
+    double const eps,
     std::vector<std::string> names,
     std::string output_path )
 : particles_{ num_particles }
@@ -12,6 +14,8 @@ Simulation::Simulation(
 , num_bodies_{ num_particles }
 , num_steps_{ steps }
 , output_interval_{ output_interval }
+, dt_{ dt }
+, eps_{ eps }
 , body_names_{ std::move( names ) }
 , output_path_{ std::move( output_path ) }
 { }
@@ -27,8 +31,7 @@ void Simulation::run() {
     // Compute initial accelerations so that integrators which read acceleration
     // on their first step (e.g. Velocity Verlet) start from a valid state.
     // Yoshida does not need this (it computes forces internally), but it is
-    // harmless and makes the API contract explicit: after run() begins,
-    // accelerations are always valid.
+    // harmless and makes the API contract explicit.
     for ( std::size_t i{}; i < num_bodies(); ++i ) {
         particles().acc_x()[i] = 0.0;
         particles().acc_y()[i] = 0.0;
@@ -42,13 +45,11 @@ void Simulation::run() {
     double min_energy{ initial_energy };
     double max_energy{ initial_energy };
 
-    // Track angular momentum as a vector to detect rotation, not just magnitude drift.
     double L0_x{}, L0_y{}, L0_z{};
     total_ang_momentum_vec( L0_x, L0_y, L0_z );
     double const initial_ang_momentum{ std::sqrt( L0_x*L0_x + L0_y*L0_y + L0_z*L0_z ) };
     double max_ang_momentum_vec_drift{};
 
-    // Track linear momentum as a vector for the same reason.
     double P0_x{}, P0_y{}, P0_z{};
     total_lin_momentum_vec( P0_x, P0_y, P0_z );
     double const initial_lin_momentum{ std::sqrt( P0_x*P0_x + P0_y*P0_y + P0_z*P0_z ) };
@@ -65,9 +66,6 @@ void Simulation::run() {
         integrator()->integrate( particles(), forces() );
 
         // Sample conservation quantities at 10x the output cadence.
-        // This is infrequent enough to be cheap (energy is O(N^2)) but frequent
-        // enough to capture the symplectic oscillation envelope, whose period
-        // is dominated by Jupiter's ~12 year orbit.
         if ( curr_step % ( 10*output_interval() ) == 0 ) {
             double const E{ total_energy() };
             max_energy = std::max( E, max_energy );
@@ -89,7 +87,7 @@ void Simulation::run() {
         }
 
         if ( curr_step % output_interval() == 0 ) {
-            bin.write( particles(), curr_step, curr_step * config::dt );
+            bin.write( particles(), curr_step, curr_step * dt_ );
         }
     }
     std::cout << "\rProgress: 100%" << std::flush;
@@ -97,12 +95,8 @@ void Simulation::run() {
     auto const end_time{ std::chrono::high_resolution_clock::now() };
     auto const duration{ std::chrono::duration_cast<std::chrono::milliseconds>( end_time - start_time ) };
 
-    // Peak-to-peak relative variation: |max - min| / |initial|.
-    // This is a conservative upper bound; see paper Section 4 for discussion.
     double const energy_drift{ std::abs( 100.0 * ( max_energy - min_energy ) / initial_energy ) };
 
-    // Vector-based momentum drift: max ||Q(t) - Q(0)|| / ||Q(0)||.
-    // This catches both magnitude changes and directional rotation.
     double const ang_momentum_drift{ initial_ang_momentum > 0.0
         ? 100.0 * max_ang_momentum_vec_drift / initial_ang_momentum : 0.0 };
     double const lin_momentum_drift{ initial_lin_momentum > 0.0
@@ -135,7 +129,7 @@ double Simulation::total_energy() const {
     double const* RESTRICT vz{ particles().vel_z() };
     double const* RESTRICT mass{ particles().mass() };
 
-    constexpr double eps_sq{ config::EPS * config::EPS };
+    double const eps_sq{ eps_ * eps_ };
     constexpr double G{ config::G };
     constexpr std::size_t OMP_THRESHOLD{ config::OMP_THRESHOLD };
 
@@ -146,12 +140,11 @@ double Simulation::total_energy() const {
     };
 
     double potential_energy{};
-    auto potential_kernel = [px, py, pz, mass, N]( std::size_t i ) -> double {
+    auto potential_kernel = [px, py, pz, mass, N, eps_sq]( std::size_t i ) -> double {
         double const pxi{ px[i] }, pyi{ py[i] }, pzi{ pz[i] };
         double const mi{ mass[i] };
         double row_pot{ 0.0 };
 
-        // j > i avoids double-counting pairs in the potential sum.
         #pragma omp simd reduction( +:row_pot )
         for ( std::size_t j = i + 1; j < N; ++j ) {
             double const dx{ px[j] - pxi };
@@ -163,30 +156,30 @@ double Simulation::total_energy() const {
 
             row_pot -= mass[j] * inv_R;
         }
-        
+
         return G * mi * row_pot;
     };
 
     if ( N >= OMP_THRESHOLD ) {
         #pragma omp parallel for simd reduction( +:kinetic_energy ) schedule( static )
         for ( std::size_t i = 0; i < N; ++i ) {
-            kinetic_energy += kinetic_kernel(i); 
+            kinetic_energy += kinetic_kernel( i );
         }
     } else {
         #pragma omp simd reduction( +:kinetic_energy )
         for ( std::size_t i = 0; i < N; ++i ) {
-            kinetic_energy += kinetic_kernel(i); 
+            kinetic_energy += kinetic_kernel( i );
         }
     }
 
     if ( N >= OMP_THRESHOLD ) {
         #pragma omp parallel for reduction( +:potential_energy ) schedule( guided )
         for ( std::size_t i = 0; i < N; ++i ) {
-            potential_energy += potential_kernel(i);
+            potential_energy += potential_kernel( i );
         }
     } else {
         for ( std::size_t i = 0; i < N; ++i ) {
-            potential_energy += potential_kernel(i);
+            potential_energy += potential_kernel( i );
         }
     }
 
@@ -245,11 +238,12 @@ double Simulation::total_lin_momentum() const {
 }
 
 void Simulation::initial_output() {
-    std::cout << "\n<--- Solar System Simulation --->" << std::endl;
+    std::cout << "\n<--- N-Body Simulation --->" << std::endl;
     std::cout << "Bodies: " << num_bodies() << std::endl;
     std::cout << "Integrator: " << integrator()->name() << std::endl;
-    std::cout << "Dt: " << config::dt << " seconds" << std::endl;
-    std::cout << "Duration: " << config::num_years << " years" << std::endl;
+    std::cout << "Dt: " << dt_ << " seconds" << std::endl;
+    std::cout << "Steps: " << num_steps_ << std::endl;
+    std::cout << "Eps: " << eps_ << " m" << std::endl;
     std::cout << "Parallelization: " << ( ( config::OMP_THRESHOLD <= num_bodies() ) ? "Enabled" : "Disabled" ) << std::endl;
     std::cout << std::endl;
 }

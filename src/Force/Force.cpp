@@ -2,7 +2,8 @@
 
 #include <omp.h>
 
-Gravity::Gravity()
+Gravity::Gravity( double const eps )
+: eps_{ eps }
 { }
 
 void Gravity::apply( Particles &particles ) const {
@@ -18,15 +19,12 @@ void Gravity::apply( Particles &particles ) const {
 
     double const* RESTRICT mass{ particles.mass() };
 
-    constexpr double eps_sq{ config::EPS * config::EPS };
+    double const eps_sq{ eps_ * eps_ };
     constexpr double G{ config::G };
 
-    // Each body sums over all N others (j = 0..N-1) rather than using j > i symmetry.
-    // This doubles FLOPs but preserves regular access patterns for SIMD and
-    // avoids write conflicts under OpenMP without atomic operations.
-    auto apply_kernel = [px, py, pz, ax, ay, az, mass, N]( std::size_t i ) {
+    auto apply_kernel = [px, py, pz, ax, ay, az, mass, N, eps_sq]( std::size_t i ) {
         double const pxi{ px[i] }, pyi{ py[i] }, pzi{ pz[i] };
-        
+
         double a_xi{}, a_yi{}, a_zi{};
 
         #pragma omp simd reduction( +:a_xi, a_yi, a_zi )
@@ -49,11 +47,11 @@ void Gravity::apply( Particles &particles ) const {
     if ( N >= config::OMP_THRESHOLD ) {
         #pragma omp parallel for schedule( static )
         for ( std::size_t i = 0; i < N; ++i ) {
-            apply_kernel(i);
+            apply_kernel( i );
         }
     } else {
         for ( std::size_t i = 0; i < N; ++i ) {
-            apply_kernel(i);
+            apply_kernel( i );
         }
     }
 }
