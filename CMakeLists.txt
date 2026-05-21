@@ -1,10 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 project(nbody LANGUAGES CXX)
 
-# OpenMP
 find_package(OpenMP REQUIRED)
 
-# Sources
 set(SOURCES
     src/main.cpp
     src/Output/Output.cpp
@@ -20,7 +18,15 @@ set(CORE_SOURCES
     src/Integrator/Integrator.cpp
 )
 
-# Common compile settings
+set(TEST_SOURCES
+    tests/unit_tests/main.cpp
+    tests/unit_tests/integrator.cpp
+    tests/unit_tests/force.cpp
+    tests/unit_tests/kepler.cpp
+    tests/unit_tests/particle.cpp
+    tests/unit_tests/barnes_hut.cpp
+)
+
 function(configure_target target_name)
     target_include_directories(${target_name} PRIVATE src)
     target_compile_features(${target_name} PRIVATE cxx_std_23)
@@ -33,14 +39,11 @@ function(configure_target target_name)
     target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX)
 endfunction()
 
-# Main simulation
 add_executable(main ${SOURCES})
 configure_target(main)
 
-# Unit tests
-add_executable(tests tests/unit_tests.cpp ${CORE_SOURCES})
+add_executable(tests ${TEST_SOURCES} ${CORE_SOURCES})
 configure_target(tests)
 
-# Scaling benchmark
 add_executable(benchmark tests/benchmark.cpp ${CORE_SOURCES})
 configure_target(benchmark)
