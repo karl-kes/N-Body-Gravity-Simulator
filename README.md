@@ -1,6 +1,6 @@
 # N-Body Gravity Engine
 
-A high-performance N-body gravitational simulator in C++, with two physical scenarios:
+A high-performance N-body gravitational simulator in C++23, with two physical scenarios:
 
 - **Solar system**: 35 bodies (Sun, 8 planets, Pluto, 25 natural satellites) over multi-century timescales, validated against NASA JPL Horizons DE441 ephemeris data.
 - **Galaxy collision**: MW-Andromeda encounter, two Plummer galaxies (configurable N), validated against van der Marel et al. 2012 predicted timeline.
@@ -53,20 +53,11 @@ Full simulation pipeline: stage the initial conditions, build the code, run the 
 **Common usage:**
 
 ```bash
-# Solar, default everything (uses existing IC if present):
-./scripts/run.sh
-
-# Solar, refetch JPL data first:
-./scripts/run.sh --fetch
-
-# Solar, planets only, Barnes-Hut, both viewers:
-./scripts/run.sh --fetch --no-moons --force bh --visualize --render
-
-# Galaxy, 50k particles per galaxy, Barnes-Hut, matplotlib viewer:
-./scripts/run.sh --galaxy --n 50000 --force bh --visualize
-
-# Galaxy, Rerun viewer with separation timeline:
-./scripts/run.sh --galaxy --force bh --render
+./scripts/run.sh                                              # use existing IC
+./scripts/run.sh --fetch                                      # solar, refetch JPL
+./scripts/run.sh --fetch --no-moons --force bh --visualize    # solar, BH, planets only
+./scripts/run.sh --galaxy --n 50000 --force bh --visualize    # galaxy, 100k total
+./scripts/run.sh --galaxy --force bh --render                 # galaxy, Rerun viewer
 ```
 
 ### `scripts/test.sh` / `scripts/test.ps1`
@@ -167,7 +158,9 @@ Reads `tests/sim_ic.bin` by default, writes `tests/sim_output.bin` by default.
 
 ## Key Results
 
-**Solar system, 249-year simulation (1950–2199), 35 bodies, Δt = 360 s, Yoshida 4th-order:**
+### Solar system
+
+249-year simulation (1950–2199), 35 bodies, Δt = 360 s, Yoshida 4th-order, direct kernel:
 
 | Metric | Value |
 |---|---|
@@ -177,11 +170,41 @@ Reads `tests/sim_ic.bin` by default, writes `tests/sim_output.bin` by default.
 | Energy conservation ΔE/E | 1.5 × 10⁻¹² |
 | Angular momentum ΔL/L | 4.3 × 10⁻¹³ |
 
-Residual errors are attributed to physics model differences (Newtonian gravity with 35 bodies vs. JPL DE441's ~300 bodies with post-Newtonian relativity, solar oblateness J₂, asteroid perturbations, and tidal effects), not numerical integration error. A timestep convergence study confirms that Δt ≤ 900 s lies on the floating-point precision floor.
+Residual errors are attributed to physics model differences (Newtonian gravity with 35 bodies vs. JPL DE441's ~300 bodies with post-Newtonian relativity, solar oblateness $J_2$, asteroid perturbations, and tidal effects), not numerical integration error. A timestep convergence study confirms that Δt ≤ 900 s lies on the floating-point precision floor.
 
-**Galaxy collision, 6 Gyr simulation, 50k particles, Barnes-Hut θ = 0.5:**
+### Galaxy collision
 
-First close passage predicted by van der Marel 2012 at $t \approx 3.9$ Gyr, final merger around $t \approx 5.9$ Gyr. Validation plot in `tests/galaxy_separation.png`.
+6 Gyr simulation, 50,000 particles ($N = 25{,}000$ per galaxy), Barnes-Hut at θ = 0.5, Plummer profile, $\epsilon = 100$ pc softening:
+
+| Metric | Simulation | Reference (van der Marel 2012) |
+|---|---|---|
+| First close passage | 3.72 Gyr | ~3.9 Gyr |
+| Initial separation | 769.8 kpc | 770 kpc |
+| Energy drift ΔE/E | 1.44% | — |
+| Angular momentum drift ΔL/L | 0.19% | — |
+| Wall-clock runtime | 52.7 min | — |
+
+First-passage time matches van der Marel's 2012 prediction within 5%, well inside the ~10-15% uncertainty band on the literature value (driven by observational uncertainty in M31's tangential velocity). Subsequent local minima in COM separation are post-merger oscillations of intermixed particle populations, not independent encounters; the galaxy cores have phase-mixed by t ≈ 5 Gyr. Validation plot saved to `tests/galaxy_separation.png` by `tools/galaxy/compare.py`.
+
+### Scaling benchmark
+
+12-thread OpenMP, Yoshida dt = 900 s, BH θ = 0.5. Single-threaded measurements are skipped above $N = 8192$ to keep wall-time tractable at large N:
+
+| N | Steps | Direct OMP (ms) | BH OMP (ms) | BH speedup |
+|---|---|---|---|---|
+| 512 | 2020 | 1447.4 | 1316.1 | 1.10× |
+| 1024 | 788 | 1930.5 | 1078.8 | 1.79× |
+| 2048 | 206 | 1940.8 | 777.5 | 2.50× |
+| 4096 | 54 | 1942.8 | 489.6 | 3.97× |
+| 8192 | 14 | 2000.5 | 211.7 | 9.45× |
+| 16384 | 3 | 1671.0 | 128.3 | 13.02× |
+| 32768 | 3 | 6651.6 | 373.6 | 17.81× |
+| 65536 | 3 | 27658.9 | 630.5 | 43.87× |
+| 131072 | 3 | 106792.5 | 2030.5 | 52.59× |
+
+Per-step direct kernel cost quadruples for every doubling of N, confirming textbook $O(N^2)$ scaling across more than two orders of magnitude in $N$. Barnes-Hut wins at every measured particle count, including the smallest tested ($N = 512$, 1.10× speedup); the crossover point sits below the practical range of the benchmark. At $N = 131{,}072$, Barnes-Hut delivers a **52× speedup** over the already-SIMD-vectorized OpenMP direct kernel — the practical justification for shipping the BH implementation in the codebase.
+
+The galaxy collision demo ($N = 50{,}000$) sits firmly in the BH-dominant regime. Extrapolating from the table, direct mode at that particle count would have taken approximately 16-18 hours instead of the 52.7 minutes measured.
 
 ---
 
@@ -214,12 +237,13 @@ First close passage predicted by van der Marel 2012 at $t \approx 3.9$ Gyr, fina
 │   └── test.sh / test.ps1          # Test & benchmark runner
 │
 ├── tests/
-│   ├── unit_tests.cpp              # 23 unit tests
+│   ├── unit_tests/                 # 23 unit tests split by module
 │   ├── benchmark.cpp               # Scaling benchmark
 │   ├── sim_ic.bin                  # Initial conditions (generated, gitignored)
 │   ├── sim_output.bin              # Simulation output (generated, gitignored)
 │   ├── jpl_reference.csv           # JPL reference ephemeris (generated)
-│   └── comparison_results.json     # Validation summary (generated)
+│   ├── comparison_results.json     # Solar validation summary (generated)
+│   └── galaxy_separation.png       # Galaxy validation plot (generated)
 │
 ├── docs/
 │   └── N_Body_Technical_Paper.pdf
