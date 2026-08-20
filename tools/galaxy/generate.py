@@ -5,7 +5,7 @@ from pathlib import Path
 # Usage:
 #     python src/generate_galaxies.py --n 25000
 
-# Binary IC format (matches main.cpp and jpl_compare.py):
+# Binary IC format (matches main.cu and jpl_compare.py):
 #     Header:
 #         uint64_t N
 #         double   dt          (s)

@@ -3,7 +3,7 @@ Solar system initial-condition generator (JPL Horizons fetcher).
 
 Queries the NASA JPL Horizons API for all 35 bodies (Sun, 8 planets, Pluto,
 25 natural satellites), writes them to tests/sim_ic.bin in the unified binary
-IC format that main.cpp reads at runtime. Also writes a reference ephemeris
+IC format that main.cu reads at runtime. Also writes a reference ephemeris
 CSV used by tools/solar/compare.py.
 
 Usage:
@@ -11,7 +11,7 @@ Usage:
     python tools/solar/fetch.py --moons
     python tools/solar/fetch.py --start 1900-01-01
 
-Binary IC format (matches main.cpp and tools/galaxy/generate.py):
+Binary IC format (matches main.cu and tools/galaxy/generate.py):
     Header:
         uint64_t N
         double   dt          (s)

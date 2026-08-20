@@ -24,7 +24,7 @@ def load_positions(path):
     """Load positions only from sim_output.bin.
 
     Returns (positions, times, N) where positions is (n_frames, N, 3) in meters
-    and times is in seconds. Format matches what main.cpp writes via Output.cpp.
+    and times is in seconds. Format matches what main.cu writes via Output.cu.
     """
     with open(path, "rb") as f:
         N = struct.unpack("Q", f.read(8))[0]

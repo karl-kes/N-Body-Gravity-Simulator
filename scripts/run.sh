@@ -22,6 +22,7 @@ FORCE="direct"
 THETA=0.5
 VISUALIZE=false
 RENDER=false
+FP32=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -34,6 +35,7 @@ while [[ $# -gt 0 ]]; do
         --theta)        THETA="$2";       shift 2 ;;
         --visualize)    VISUALIZE=true;   shift ;;
         --render)       RENDER=true;      shift ;;
+        --fp32)         FP32=true;        shift ;;
         -h|--help)
             echo "Usage: ./run.sh [OPTIONS]"
             echo ""
@@ -52,6 +54,7 @@ while [[ $# -gt 0 ]]; do
             echo "Force kernel:"
             echo "  --force MODE         direct or bh (default: direct)"
             echo "  --theta T            Barnes-Hut opening angle (default: 0.5)"
+            echo "  --fp32              Build using single precision (default: double)"
             echo ""
             echo "Post-processing:"
             echo "  --visualize          Open matplotlib viewer after simulation"
@@ -83,7 +86,12 @@ fi
 # Build:
 echo ""
 echo "Building..."
-cmake -B build -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1
+cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_COMPILER=g++-15 \
+    -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.3/bin/nvcc \
+    -DCMAKE_CUDA_HOST_COMPILER=g++-15 \
+    -DFP32="$FP32" > /dev/null 2>&1
 cmake --build build --target main --config Release
 
 # Run:

@@ -15,6 +15,7 @@ BENCHMARK=false
 BENCH_ONLY=false
 TRIALS=3
 MAX_N=65536
+FP32=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -22,6 +23,7 @@ while [[ $# -gt 0 ]]; do
         --bench-only)   BENCH_ONLY=true;  shift ;;
         --trials)       TRIALS="$2";      shift 2 ;;
         --max-n)        MAX_N="$2";       shift 2 ;;
+        --fp32)         FP32=true;        shift ;;
         -h|--help)
             echo "Usage: ./test.sh [OPTIONS]"
             echo ""
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
             echo "Benchmark options:"
             echo "  --trials N           Trials per N value (default: 3)"
             echo "  --max-n N            Maximum N for benchmark sweep (default: 65536)"
+            echo "  --fp32              Build using single precision (default: double)"
             echo ""
             echo "  -h, --help           Show this help message"
             exit 0
@@ -48,7 +51,12 @@ if [ "$BENCHMARK" = true ];  then RUN_BENCH=true; fi
 
 # Build:
 echo "Building..."
-cmake -B build -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1
+cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_COMPILER=g++-15 \
+    -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.3/bin/nvcc \
+    -DCMAKE_CUDA_HOST_COMPILER=g++-15 \
+    -DFP32="$FP32" > /dev/null 2>&1
 
 if [ "$RUN_TESTS" = true ]; then
     cmake --build build --target tests --config Release

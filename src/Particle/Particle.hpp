@@ -1,76 +1,44 @@
 #pragma once
 
-#include "aligned_soa.hpp"
+#include <xpu/soa.hpp>
+
+#include "../util/enum.hpp"
+#include "../util/floating_point.hpp"
 
 class Particles {
 private:
-    std::size_t N_;
-    
-    // SoA field indices into the contiguous memory block.
-    // All 13 arrays are packed end-to-end: [pos_x|pos_y|...|mass], each of length N.
-    enum ArrayIndex : std::size_t {
-        POS_X,
-        POS_Y,
-        POS_Z,
-        VEL_X,
-        VEL_Y,
-        VEL_Z,
-        ACC_X,
-        ACC_Y,
-        ACC_Z,
-        OLD_ACC_X,
-        OLD_ACC_Y,
-        OLD_ACC_Z,
-        MASS,
-        NUM_SUB_ARRAYS
-    };
+  enum class ArrayIndex : std::size_t {
+    mass = 0uz,
+    pos = enum_sum<std::size_t>(mass, scalar_count),
+    vel = enum_sum<std::size_t>(pos, axis_count),
+    acc = enum_sum<std::size_t>(vel, axis_count),
+    count = enum_sum<std::size_t>(acc, axis_count)
+  };
 
-    // Single contiguous allocation: 13 * N doubles.
-    // Eliminates per-array allocation overhead and guarantees spatial locality.
-    AlignedSoA<double> mem_block_;
+  xpu::soa<fp_t, to<std::size_t>(ArrayIndex::count)> data_;
 
 public:
-    explicit Particles( std::size_t const num_particles )
-    : N_{ num_particles }
-    , mem_block_{ num_particles, NUM_SUB_ARRAYS }
-    { }
+  explicit Particles(const std::size_t num_particles)
+    : data_{num_particles}
+  { }
 
-    // Move-only: unique_ptr member prevents copying implicitly,
-    // but explicit declarations make ownership semantics clear.
-    Particles( Particles&& ) = default;
-    Particles& operator=( Particles&& ) = default;
-    Particles( Particles const& ) = delete;
-    Particles& operator=( Particles const& ) = delete;
+  [[nodiscard]] CUDA_CALLABLE inline
+  xpu::soa_view<fp_t, scalar_count> mass() {
+    return data_.view<scalar_count, to<std::size_t>(ArrayIndex::mass)>();
+  }
 
-    [[nodiscard]] std::size_t num_particles() const { return N_; }
+  [[nodiscard]] CUDA_CALLABLE inline
+  xpu::soa_view<fp_t, axis_count> pos() {
+    return data_.view<axis_count, to<std::size_t>(ArrayIndex::pos)>();
+  }
 
-    // Mutable raw pointers:
-    [[nodiscard]] double* pos_x() { return mem_block_[POS_X]; }
-    [[nodiscard]] double* pos_y() { return mem_block_[POS_Y]; }
-    [[nodiscard]] double* pos_z() { return mem_block_[POS_Z]; }
-    [[nodiscard]] double* vel_x() { return mem_block_[VEL_X]; }
-    [[nodiscard]] double* vel_y() { return mem_block_[VEL_Y]; }
-    [[nodiscard]] double* vel_z() { return mem_block_[VEL_Z]; }
-    [[nodiscard]] double* acc_x() { return mem_block_[ACC_X]; }
-    [[nodiscard]] double* acc_y() { return mem_block_[ACC_Y]; }
-    [[nodiscard]] double* acc_z() { return mem_block_[ACC_Z]; }
-    [[nodiscard]] double* old_acc_x() { return mem_block_[OLD_ACC_X]; }
-    [[nodiscard]] double* old_acc_y() { return mem_block_[OLD_ACC_Y]; }
-    [[nodiscard]] double* old_acc_z() { return mem_block_[OLD_ACC_Z]; }
-    [[nodiscard]] double* mass() { return mem_block_[MASS]; }
+  [[nodiscard]] CUDA_CALLABLE inline
+  xpu::soa_view<fp_t, axis_count> vel() {
+    return data_.view<axis_count, to<std::size_t>(ArrayIndex::vel)>();
+  }
 
-    // Const raw pointers:
-    [[nodiscard]] double const* pos_x() const { return mem_block_[POS_X]; }
-    [[nodiscard]] double const* pos_y() const { return mem_block_[POS_Y]; }
-    [[nodiscard]] double const* pos_z() const { return mem_block_[POS_Z]; }
-    [[nodiscard]] double const* vel_x() const { return mem_block_[VEL_X]; }
-    [[nodiscard]] double const* vel_y() const { return mem_block_[VEL_Y]; }
-    [[nodiscard]] double const* vel_z() const { return mem_block_[VEL_Z]; }
-    [[nodiscard]] double const* acc_x() const { return mem_block_[ACC_X]; }
-    [[nodiscard]] double const* acc_y() const { return mem_block_[ACC_Y]; }
-    [[nodiscard]] double const* acc_z() const { return mem_block_[ACC_Z]; }
-    [[nodiscard]] double const* old_acc_x() const { return mem_block_[OLD_ACC_X]; }
-    [[nodiscard]] double const* old_acc_y() const { return mem_block_[OLD_ACC_Y]; }
-    [[nodiscard]] double const* old_acc_z() const { return mem_block_[OLD_ACC_Z]; }
-    [[nodiscard]] double const* mass() const { return mem_block_[MASS]; }
+  [[nodiscard]] CUDA_CALLABLE inline
+  xpu::soa_view<fp_t, axis_count> acc() {
+    return data_.view<axis_count, to<std::size_t>(ArrayIndex::acc)>();
+  }
 };

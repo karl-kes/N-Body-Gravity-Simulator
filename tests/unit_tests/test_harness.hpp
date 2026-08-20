@@ -4,7 +4,7 @@
 //
 // Tests register themselves via the TEST macro using a static initializer.
 // inline globals ensure g_pass, g_fail, and the tests() registry are unique
-// across the executable (one shared instance across all .cpp files).
+// across the executable (one shared instance across all .cu files).
 
 #include <iostream>
 #include <iomanip>
@@ -22,7 +22,7 @@ struct TestEntry {
 };
 
 // Meyers-singleton pattern: inline function with a static local. All TUs
-// see the same vector regardless of which .cpp file calls tests().
+// see the same vector regardless of which .cu file calls tests().
 inline std::vector<TestEntry> &tests() {
     static std::vector<TestEntry> t;
     return t;

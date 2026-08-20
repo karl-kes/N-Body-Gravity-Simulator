@@ -24,13 +24,13 @@ Both scenarios use a 4th-order Yoshida symplectic integrator and choose between 
 ./scripts/test.sh
 ```
 
-On Windows replace `./scripts/run.sh` with `.\scripts\run.ps1` and `--flags` with `-Flags` (`-Fetch`, `-Galaxy`, etc).
+The native build targets Linux. On Windows, use the Bash scripts under WSL2.
 
 ---
 
 ## Scripts
 
-Two scripts handle everything. Both have Linux/macOS (`.sh`) and Windows (`.ps1`) versions with identical behavior and naming.
+The Bash scripts handle the supported Linux/WSL2 workflow. The older PowerShell/MinGW variants remain in the tree for reference, but they are not compatible with the required GCC 15/CUDA 13.3 toolchain.
 
 ### `scripts/run.sh` / `scripts/run.ps1`
 
@@ -47,6 +47,7 @@ Full simulation pipeline: stage the initial conditions, build the code, run the 
 | `--theta T` | `-Theta T` | `0.5` | Barnes-Hut opening angle (only used with `--force bh`) |
 | `--visualize` | `-Visualize` | (off) | Open matplotlib viewer after the simulation completes |
 | `--render` | `-Render` | (off) | Open Rerun viewer after the simulation completes |
+| `--fp32` | — | (off) | Build with `fp_t` as `float` instead of `double` |
 
 **Scenario selection.** `--fetch` and `--galaxy` are mutually exclusive. If you pass neither, the script uses whatever IC is already in `tests/sim_ic.bin` (from a previous run).
 
@@ -70,6 +71,7 @@ Build and run the test suite and/or the scaling benchmark.
 | `--bench-only` | `-BenchOnly` | (off) | Skip unit tests, run benchmark only |
 | `--trials N` | `-Trials N` | `3` | Trials per N value in the benchmark |
 | `--max-n N` | `-MaxN N` | `65536` | Maximum N for benchmark sweep |
+| `--fp32` | — | (off) | Build with `fp_t` as `float` instead of `double` |
 
 **Common usage:**
 
@@ -83,9 +85,11 @@ Build and run the test suite and/or the scaling benchmark.
 
 ## Prerequisites
 
-- C++23 compiler (GCC / Clang / MSVC / MinGW)
+- GCC 15.x (`g++-15`)
+- NVIDIA CUDA Toolkit 13.3.x, with GCC 15 as its host compiler
 - CMake 3.25+
 - OpenMP
+- Internet access during the first configure so CMake can fetch the pinned xpu dependency
 - Python 3.8+ with `numpy` and `matplotlib`
 - Internet connection for `--fetch` (JPL Horizons API)
 - Optional: `pip install rerun-sdk` for the Rerun viewer (`--render`)
@@ -212,7 +216,7 @@ The galaxy collision demo ($N = 50{,}000$) sits firmly in the BH-dominant regime
 
 ```
 ├── src/                            # C++ source (build inputs)
-│   ├── main.cpp                    # Entry point (reads tests/sim_ic.bin)
+│   ├── main.cu                     # Entry point (reads tests/sim_ic.bin)
 │   ├── Config.hpp                  # Universal constants (G, time units)
 │   ├── Force/                      # Direct O(N²) SIMD + Barnes-Hut O(N log N) octree
 │   ├── Integrator/                 # Yoshida 4th-order + Velocity Verlet
@@ -238,7 +242,7 @@ The galaxy collision demo ($N = 50{,}000$) sits firmly in the BH-dominant regime
 │
 ├── tests/
 │   ├── unit_tests/                 # 23 unit tests split by module
-│   ├── benchmark.cpp               # Scaling benchmark
+│   ├── benchmark.cu                # Scaling benchmark
 │   ├── sim_ic.bin                  # Initial conditions (generated, gitignored)
 │   ├── sim_output.bin              # Simulation output (generated, gitignored)
 │   ├── jpl_reference.csv           # JPL reference ephemeris (generated)

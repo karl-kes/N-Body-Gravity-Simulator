@@ -1,0 +1,33 @@
+{
+  "configurations": [
+    {
+      "name": "Linux CUDA",
+      "compilerPath": "/usr/bin/g++-15",
+      "intelliSenseMode": "linux-gcc-x64",
+      "cppStandard": "c++23",
+      "cStandard": "c23",
+      "includePath": [
+        "${workspaceFolder}/src",
+        "${workspaceFolder}/tests",
+        "${workspaceFolder}/build/_deps/xpu-src",
+        "/usr/local/cuda-13.3/targets/x86_64-linux/include",
+        "/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl"
+      ],
+      "defines": [
+        "XPU_CUDA",
+        "__CUDACC__"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/src",
+          "${workspaceFolder}/tests",
+          "${workspaceFolder}/build/_deps/xpu-src",
+          "/usr/local/cuda-13.3/targets/x86_64-linux/include",
+          "/usr/local/cuda-13.3/targets/x86_64-linux/include/cccl"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ],
+  "version": 4
+}

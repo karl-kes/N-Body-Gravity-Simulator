@@ -1,0 +1,6 @@
+{
+  "clangd.enable": false,
+  "clangd.detectExtensionConflicts": false,
+  "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.errorSquiggles": "enabled"
+}
