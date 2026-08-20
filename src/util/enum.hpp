@@ -4,7 +4,7 @@
 
 template <typename C, typename T> [[nodiscard]] CUDA_CALLABLE
 inline constexpr C to(T arg) noexcept {
-  return static_cast<C>(arg)
+  return static_cast<C>(arg);
 }
 
 template <typename C, typename T> [[nodiscard]] CUDA_CALLABLE
